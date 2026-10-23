@@ -20,7 +20,7 @@ Options:
   --yes                 Do not ask for confirmation before installing packages.
   --dry-run             Show planned actions without changing the system.
   --no-system-packages  Skip dnf; use when dependencies are already installed.
-  --with-dev            Also install pytest in the project virtual environment.
+  --with-dev            Also install pytest and build tools in the project virtual environment.
   --start-tor           Start tor.service after installation.
   --enable-tor          Enable tor.service at boot and start it now.
   -h, --help            Show this help.
@@ -62,7 +62,7 @@ if [[ ! -f "$SCRIPT_DIR/pyproject.toml" ]]; then
   exit 1
 fi
 
-packages=(python3 python3-pip tor torsocks curl NetworkManager)
+packages=(python3 python3-pip tor torsocks curl NetworkManager iproute nftables policycoreutils-python-utils)
 if (( INSTALL_SYSTEM_PACKAGES )); then
   printf 'ChxChx Security will install/verify these Fedora packages:\n'
   printf '  - %s\n' "${packages[@]}"
@@ -111,7 +111,7 @@ fi
 
 "$VENV_DIR/bin/python" -m pip install --disable-pip-version-check -e "$SCRIPT_DIR"
 if (( INSTALL_DEV_DEPENDENCIES )); then
-  "$VENV_DIR/bin/python" -m pip install --disable-pip-version-check pytest
+  "$VENV_DIR/bin/python" -m pip install --disable-pip-version-check pytest build
 fi
 
 if (( ENABLE_TOR )); then

@@ -12,9 +12,9 @@ def test_tor_port_plan_renders_private_listeners_without_executing():
     assert plan.executable is False
     assert plan.directives == (
         "TransPort 10.203.0.1:9040",
-        "DNSPort 10.203.0.1:5353",
+        "DNSPort 10.203.0.1:5300",
     )
-    assert plan.render() == "TransPort 10.203.0.1:9040\nDNSPort 10.203.0.1:5353\n"
+    assert plan.render() == "TransPort 10.203.0.1:9040\nDNSPort 10.203.0.1:5300\n"
 
 
 @pytest.mark.parametrize("address", ["0.0.0.0", "127.0.0.1", "8.8.8.8", "::1"])

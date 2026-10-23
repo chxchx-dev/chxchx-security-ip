@@ -1,16 +1,19 @@
-.PHONY: venv install test check integration namespace-integration doctor clean
+.PHONY: venv install test check package integration namespace-integration doctor clean
 
 venv:
 	python3 -m venv .venv
 
 install:
-	.venv/bin/pip install -e . pytest
+	.venv/bin/pip install -e . pytest build
 
 test:
 	.venv/bin/pytest
 
 check: test
-	bash -n install-fedora.sh
+	bash -n install-fedora.sh install-remote-fedora.sh install-debian.sh install-remote-debian.sh
+
+package:
+	.venv/bin/python -m build --sdist --wheel
 
 integration:
 	CHXSEC_RUN_LIVE_TESTS=1 .venv/bin/pytest tests/integration

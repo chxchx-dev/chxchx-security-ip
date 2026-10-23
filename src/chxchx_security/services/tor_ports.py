@@ -61,7 +61,7 @@ def build_tor_port_plan(
     bind_address: str,
     *,
     trans_port: int = 9040,
-    dns_port: int = 5353,
+    dns_port: int = 5300,
 ) -> TorPortPlan:
     address = _bind_address(bind_address)
     trans_port = _port(trans_port, "TransPort")

@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "chxchx-security"
-version = "0.1.2"
-description = "Fedora-focused privacy orchestration CLI using system Tor, torsocks and NetworkManager."
+version = "0.2.0"
+description = "Linux privacy orchestration CLI for Fedora, Ubuntu, and Kali using system Tor, torsocks, and NetworkManager."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }

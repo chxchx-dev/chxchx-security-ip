@@ -86,7 +86,7 @@ def build_network_plan(
     *,
     subnet: str,
     trans_port: int = 9040,
-    dns_port: int = 5353,
+    dns_port: int = 5300,
 ) -> NetworkPlan:
     validate_session_id(session_id)
     network = _subnet(subnet)
@@ -147,6 +147,27 @@ def build_network_plan(
                 f"{namespace_ip}/{prefix_length}",
                 "dev",
                 namespace_interface,
+            ),
+            "planned",
+        ),
+        NetworkStep(
+            "bring up host interface",
+            (*prefix, "ip", "link", "set", host_interface, "up"),
+            "planned",
+        ),
+        NetworkStep(
+            "bring up namespace interface",
+            (
+                *prefix,
+                "ip",
+                "netns",
+                "exec",
+                namespace,
+                "ip",
+                "link",
+                "set",
+                namespace_interface,
+                "up",
             ),
             "planned",
         ),

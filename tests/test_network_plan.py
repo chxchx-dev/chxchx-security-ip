@@ -23,7 +23,7 @@ def test_network_plan_contains_veth_and_rollback_steps():
     assert plan.host_address == "10.203.0.1/30"
     assert plan.namespace_address == "10.203.0.2/30"
     assert plan.trans_port == 9040
-    assert plan.dns_port == 5353
+    assert plan.dns_port == 5300
     assert plan.steps[0].name == "create veth pair"
     assert plan.steps[-1].status == "rollback"
 
