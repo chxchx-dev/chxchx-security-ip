@@ -45,6 +45,47 @@ jobs:
       - name: Compile Python sources
         run: python -m compileall -q src
 
+  installer-distro-smoke:
+    name: Python/bootstrap tests (${{ matrix.distro }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distro: Fedora
+            image: fedora:latest
+          - distro: Ubuntu 24.04
+            image: ubuntu:24.04
+          - distro: Kali rolling
+            image: kalilinux/kali-rolling
+    container:
+      image: ${{ matrix.image }}
+
+    steps:
+      - name: Install runner dependencies
+        run: |
+          if command -v dnf >/dev/null 2>&1; then
+            dnf install -y git python3 python3-pip python3-pip-wheel tar curl
+          else
+            apt-get update
+            DEBIAN_FRONTEND=noninteractive apt-get install -y git python3 python3-venv python3-pip tar curl
+          fi
+
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up project environment
+        run: |
+          python3 -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/python -m pip install -e . pytest
+
+      - name: Run test suite
+        run: .venv/bin/python -m pytest
+
+      - name: Validate installer syntax
+        run: bash -n install-fedora.sh install-remote-fedora.sh install-debian.sh install-remote-debian.sh
+
   public-scan:
     name: Public tree scan
     runs-on: ubuntu-latest

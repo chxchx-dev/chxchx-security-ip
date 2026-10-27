@@ -62,7 +62,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("shell", help="Start an ephemeral torsocks shell")
 
-    session = sub.add_parser("session", help="Inspect the upcoming isolated-session engine")
+    session = sub.add_parser("session", help="Manage isolated protected sessions")
     session_sub = session.add_subparsers(dest="session_command", required=True)
     session_tools = session_sub.add_parser("tools", help="Check namespace prerequisites")
     session_tools.add_argument("--json", action="store_true", help="Emit machine-readable JSON")

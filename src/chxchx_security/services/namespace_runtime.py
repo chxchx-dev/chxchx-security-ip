@@ -10,6 +10,11 @@ from chxchx_security.services.session import (
     SessionState,
     namespace_name,
 )
+from chxchx_security.services.namespace_config import (
+    NETNS_CONFIG_ROOT,
+    configure_namespace_resolver,
+    remove_namespace_resolver,
+)
 from chxchx_security.utils.process import CmdResult, run
 
 
@@ -38,11 +43,9 @@ class NamespaceRuntime:
         privileged_prefix: tuple[str, ...] | None = None,
     ) -> None:
         self._runner = runner or (lambda argv: run(argv, timeout=30))
-        self._privileged_prefix = (
-            ()
-            if privileged_prefix is None and os.geteuid() == 0
-            else privileged_prefix or ("sudo",)
-        )
+        if privileged_prefix is None:
+            privileged_prefix = () if os.geteuid() == 0 else ("sudo",)
+        self._privileged_prefix = privileged_prefix
 
     def _create_commands(self, namespace: str) -> tuple[tuple[str, ...], ...]:
         prefix = self._privileged_prefix
@@ -133,9 +136,60 @@ class NamespaceRuntime:
             commands,
         )
 
+    def configure_resolver(
+        self,
+        session_id: str,
+        gateway_address: str,
+        *,
+        dry_run: bool = False,
+    ) -> NamespaceResult:
+        namespace = namespace_name(session_id)
+        configured = configure_namespace_resolver(
+            namespace,
+            gateway_address,
+            runner=self._runner,
+            prefix=self._privileged_prefix,
+            config_root=NETNS_CONFIG_ROOT,
+            dry_run=dry_run,
+        )
+        state = (
+            SessionState.STARTING
+            if dry_run
+            else SessionState.ACTIVE
+            if configured.ok
+            else SessionState.FAILED
+        )
+        return NamespaceResult(
+            configured.ok,
+            "configure-resolver",
+            session_id,
+            namespace,
+            state,
+            configured.ok and not dry_run,
+            configured.detail,
+            configured.commands,
+        )
+
+    def _remove_resolver_config(
+        self, namespace: str
+    ) -> tuple[bool, str, tuple[tuple[str, ...], ...]]:
+        result = remove_namespace_resolver(
+            namespace,
+            runner=self._runner,
+            prefix=self._privileged_prefix,
+            config_root=NETNS_CONFIG_ROOT,
+        )
+        return result.ok, result.detail, result.commands
+
     def destroy(self, session_id: str, *, dry_run: bool = False) -> NamespaceResult:
         namespace = namespace_name(session_id)
         command = self._destroy_command(namespace)
+        resolver_path = os.path.join(NETNS_CONFIG_ROOT, namespace, "resolv.conf")
+        resolver_dir = os.path.dirname(resolver_path)
+        cleanup_plan = (
+            (*self._privileged_prefix, "rm", "-f", "--", resolver_path),
+            (*self._privileged_prefix, "rmdir", "--", resolver_dir),
+        )
         if dry_run:
             return NamespaceResult(
                 True,
@@ -144,18 +198,31 @@ class NamespaceRuntime:
                 namespace,
                 SessionState.DESTROYED,
                 False,
-                "dry-run; no namespace was destroyed",
-                (command,),
+                "dry-run; namespace and managed DNS config would be removed",
+                (command, *cleanup_plan),
             )
 
         result = self._runner(command)
+        if not result.ok:
+            return NamespaceResult(
+                False,
+                "destroy",
+                session_id,
+                namespace,
+                SessionState.FAILED,
+                False,
+                "namespace destruction failed",
+                (command,),
+            )
+
+        resolver_ok, detail, resolver_commands = self._remove_resolver_config(namespace)
         return NamespaceResult(
-            result.ok,
+            resolver_ok,
             "destroy",
             session_id,
             namespace,
-            SessionState.DESTROYED if result.ok else SessionState.FAILED,
+            SessionState.DESTROYED if resolver_ok else SessionState.FAILED,
             False,
-            "namespace destroyed" if result.ok else "namespace destruction failed",
-            (command,),
+            f"namespace destroyed; {detail}",
+            (command, *resolver_commands),
         )

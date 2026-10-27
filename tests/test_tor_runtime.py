@@ -53,6 +53,22 @@ def _runtime(fake):
     return TorPortRuntime(runner=fake, privileged_prefix=("sudo",), sleep=lambda _s: None)
 
 
+def _selinux_runtime(policy: str, local: str = ""):
+    fake = Fake(getenforce=CmdResult(True, 0, "Enforcing", ""))
+    mappings = {
+        ("semanage", "port", "-l"): policy,
+        ("semanage", "port", "-l", "-C"): local,
+    }
+
+    def runner(command):
+        rest = tuple(command[1:] if command[0] == "sudo" else command)
+        if rest in mappings:
+            return CmdResult(True, 0, mappings[rest], "")
+        return fake(command)
+
+    return _runtime(runner), fake
+
+
 @pytest.fixture(autouse=True)
 def no_real_files(monkeypatch):
     monkeypatch.setattr(tor_runtime.os.path, "lexists", lambda _p: False)
@@ -150,15 +166,54 @@ def test_remove_deletes_dropin_and_reloads_only_if_tor_active(monkeypatch):
     assert any("reload" in c for c in fake.calls)
 
 
+def test_remove_keeps_selinux_ports_without_chxsec_ownership_markers(monkeypatch):
+    monkeypatch.setattr(tor_runtime.os.path, "lexists", lambda _p: True)
+    dropin = """# Managed by chxsec
+TransPort 10.203.0.1:19040
+DNSPort 10.203.0.1:15300
+"""
+    fake = Fake(cat=CmdResult(True, 0, dropin, ""))
+
+    result = _runtime(fake).remove("demo")
+
+    assert result.ok is True and not any(command[1:3] == ("semanage", "port") for command in fake.calls)
+
+
 def test_remove_unlabels_the_ports_found_in_the_existing_dropin(monkeypatch):
     monkeypatch.setattr(tor_runtime.os.path, "lexists", lambda _p: True)
-    dropin = "# Managed by chxsec\nTransPort 10.203.0.1:19040\nDNSPort 10.203.0.1:15300\n"
+    dropin = """# Managed by chxsec
+# chxsec-selinux-port: tcp 19040
+# chxsec-selinux-port: udp 15300
+TransPort 10.203.0.1:19040
+DNSPort 10.203.0.1:15300
+"""
     fake = Fake(cat=CmdResult(True, 0, dropin, ""))
     result = _runtime(fake).remove("demo")
 
     assert result.ok is True
     assert ("sudo", "semanage", "port", "-d", "-t", "tor_port_t", "-p", "tcp", "19040") in fake.calls
     assert ("sudo", "semanage", "port", "-d", "-t", "tor_port_t", "-p", "udp", "15300") in fake.calls
+
+
+def test_apply_adds_overrides_for_default_unreserved_selinux_ports():
+    policy = "unreserved_port_t  tcp  1024-65535\n" "unreserved_port_t  udp  1024-65535"
+    runtime, fake = _selinux_runtime(policy)
+
+    result = runtime.apply("demo", subnet=SUBNET)
+
+    assert result.ok is True
+    assert ("sudo", "semanage", "port", "-a", "-t", "tor_port_t", "-p", "tcp", "9040") in fake.calls
+    assert ("sudo", "semanage", "port", "-a", "-t", "tor_port_t", "-p", "udp", "5300") in fake.calls
+    assert "# chxsec-selinux-port: tcp 9040" in result.config and "# chxsec-selinux-port: udp 5300" in result.config
+
+
+def test_apply_preserves_existing_local_selinux_port_customization():
+    runtime, fake = _selinux_runtime("unreserved_port_t tcp 1024-65535", "http_port_t tcp 9040")
+
+    result = runtime.apply("demo", subnet=SUBNET)
+
+    assert result.ok is False and "local SELinux 'http_port_t' mapping" in result.detail
+    assert not any("install" in command or command[1:4] == ("semanage", "port", "-a") for command in fake.calls)
 
 
 def test_apply_labels_both_ports_for_selinux_before_installing_the_dropin():
@@ -185,9 +240,10 @@ def test_apply_skips_labeling_a_port_already_registered_as_tor_port_t():
 
 
 def test_apply_refuses_when_port_is_labeled_for_a_different_selinux_type():
+    policy = "unreserved_port_t tcp 1024-65535\nhttp_port_t tcp 9040"
     fake = Fake(
         getenforce=CmdResult(True, 0, "Enforcing", ""),
-        semanage=CmdResult(True, 0, "http_port_t  tcp  9040", ""),
+        semanage=CmdResult(True, 0, policy, ""),
     )
     result = _runtime(fake).apply("demo", subnet=SUBNET)
 

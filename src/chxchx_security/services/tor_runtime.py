@@ -69,7 +69,8 @@ def _local(row: str) -> tuple[str, int] | None:
 
 
 def _selinux_port_type(semanage_port_list: str, proto: str, port: int) -> str | None:
-    """Find which SELinux type (if any) a port is registered under, e.g. from `semanage port -l`."""
+    """Find the most specific SELinux type assigned to a port."""
+    matches: list[tuple[int, str]] = []
     for line in semanage_port_list.splitlines():
         columns = line.split()
         if len(columns) < 3 or columns[1] != proto:
@@ -80,19 +81,41 @@ def _selinux_port_type(semanage_port_list: str, proto: str, port: int) -> str | 
             if "-" in port_range:
                 low, _, high = port_range.partition("-")
                 if low.isdigit() and high.isdigit() and int(low) <= port <= int(high):
-                    return port_type
+                    matches.append((int(high) - int(low), port_type))
             elif port_range == str(port):
-                return port_type
-    return None
+                matches.append((0, port_type))
+    if not matches:
+        return None
+    specificity = min(width for width, _ in matches)
+    types = {port_type for width, port_type in matches if width == specificity}
+    return next(iter(types)) if len(types) == 1 else "<conflicting SELinux mappings>"
 
 
-def _configured_ports(dropin_content: str) -> list[tuple[int, str]]:
+def _managed_selinux_ports(dropin_content: str) -> list[tuple[int, str]]:
+    marker = "# chxsec-selinux-port:"
     ports = []
-    if match := _TRANS_PORT_RE.search(dropin_content):
-        ports.append((int(match.group(1)), "tcp"))
-    if match := _DNS_PORT_RE.search(dropin_content):
-        ports.append((int(match.group(1)), "udp"))
+    for line in dropin_content.splitlines():
+        if not line.startswith(marker):
+            continue
+        fields = line.removeprefix(marker).split()
+        if len(fields) != 2 or fields[0] not in {"tcp", "udp"} or not fields[1].isdigit():
+            continue
+        port = int(fields[1])
+        if 1 <= port <= 65535:
+            ports.append((port, fields[0]))
     return ports
+
+
+def _with_managed_selinux_ports(
+    config: str, ports: list[tuple[int, str]]
+) -> str:
+    if not ports:
+        return config
+    header, body = config.split("\n", 1)
+    markers = "".join(
+        f"# chxsec-selinux-port: {proto} {port}\n" for port, proto in ports
+    )
+    return f"{header}\n{markers}{body}"
 
 
 class TorPortRuntime:
@@ -142,10 +165,10 @@ class TorPortRuntime:
             and not existing.ok
         ):
             return TorPortResult(True, session_id, False, "no Tor drop-in to remove")
-        commands = [(*self._prefix, "rm", "-f", path)]
+        commands: list[tuple[str, ...]] = [(*self._prefix, "rm", "-f", path)]
         if not self._runner(commands[0]).ok:
             return TorPortResult(False, session_id, False, "could not remove Tor drop-in", tuple(commands))
-        commands.extend(self._unlabel_ports(_configured_ports(existing.stdout)))
+        commands.extend(self._unlabel_ports(_managed_selinux_ports(existing.stdout)))
         state = self._runner(("systemctl", "is-active", "tor.service"))
         if state.stdout.strip() == "active":
             commands.append((*self._prefix, "systemctl", "reload", "tor.service"))
@@ -214,11 +237,24 @@ class TorPortRuntime:
         selinux_enabled = self._runner(("getenforce",))
         if selinux_enabled.ok and selinux_enabled.stdout.strip() in {"Enforcing", "Permissive"}:
             listing = self._runner(("semanage", "port", "-l"))
+            local_listing = self._runner(("semanage", "port", "-l", "-C"))
+            if not listing.ok or not local_listing.ok:
+                return fail("could not inspect SELinux port mappings", commands)
             for port, proto in ((trans_port, "tcp"), (dns_port, "udp")):
-                existing_type = _selinux_port_type(listing.stdout, proto, port) if listing.ok else None
+                local_type = _selinux_port_type(local_listing.stdout, proto, port)
+                if local_type == SELINUX_PORT_TYPE:
+                    continue
+                if local_type is not None:
+                    commands.extend(self._unlabel_ports(labeled))
+                    return fail(
+                        f"{proto} port {port} has a local SELinux '{local_type}' mapping; "
+                        "remove or change it before applying Tor ports",
+                        commands,
+                    )
+                existing_type = _selinux_port_type(listing.stdout, proto, port)
                 if existing_type == SELINUX_PORT_TYPE:
                     continue
-                if existing_type is not None:
+                if existing_type not in {None, "unreserved_port_t"}:
                     commands.extend(self._unlabel_ports(labeled))
                     return fail(
                         f"{proto} port {port} is already an SELinux '{existing_type}' port; "
@@ -231,6 +267,7 @@ class TorPortRuntime:
                     commands.extend(self._unlabel_ports(labeled))
                     return fail(f"could not label {proto} port {port} for SELinux (tor_t needs to bind it)", commands)
                 labeled.append((port, proto))
+        config = _with_managed_selinux_ports(config, labeled)
         with tempfile.TemporaryDirectory(prefix="chxsec-") as directory:
             source = os.path.join(directory, "dropin.conf")
             fd = os.open(source, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)

@@ -155,6 +155,42 @@ def test_route_failure_rolls_back_without_exec(monkeypatch, wiring):
     assert executed == []
 
 
+def test_rollback_failure_is_reported_in_session_result(monkeypatch, wiring):
+    log, make = wiring
+    _patch_stages(monkeypatch, make, fail_tor=True)
+    launched = []
+    runtime = SessionRuntime(
+        runner=_ok, executor=lambda argv: launched.append(argv) or 0
+    )
+
+    def failed_destroy(_session_id, **_kwargs):
+        log.append(("remove", "namespace"))
+        return _Result(False, "namespace still exists")
+
+    setattr(runtime._namespaces, "destroy", failed_destroy)
+    result = runtime.start("demo", ["true"], subnet=SUBNET)
+
+    assert result.ok is False
+    assert launched == []
+    assert "cleanup incomplete: namespace=namespace still exists" in result.detail
+    assert [name for action, name in log if action == "remove"] == ["firewall", "namespace"]
+
+
+def test_command_launch_error_returns_failure_after_cleanup(monkeypatch, wiring):
+    log, make = wiring
+    _patch_stages(monkeypatch, make)
+
+    def missing_command(_argv):
+        raise FileNotFoundError("missing executable")
+
+    runtime = SessionRuntime(runner=_ok, executor=missing_command)
+    result = runtime.start("demo", ["missing-command"], subnet=SUBNET)
+
+    assert result.ok is False and result.exit_code is None
+    assert "command launch failed: missing executable" in result.detail
+    assert [name for action, name in log if action == "remove"] == ["tor", "firewall", "namespace"]
+
+
 def test_cleanup_runs_even_when_the_command_raises(monkeypatch, wiring):
     log, make = wiring
     _patch_stages(monkeypatch, make)

@@ -91,7 +91,15 @@ chxsec doctor
 chxsec tor verify
 ```
 
-Los enlaces directos apuntan a la rama `dev`. Puedes usar otro archivo fuente con `CHXSEC_SOURCE_ARCHIVE_URL` o elegir otra carpeta con `CHXSEC_INSTALL_DIR`.
+Los enlaces directos apuntan a la rama `dev`. También puedes usar otro archivo con `CHXSEC_SOURCE_ARCHIVE_URL` o elegir otra carpeta con `CHXSEC_INSTALL_DIR`. Para fijar el código a una release o commit, define `CHXSEC_SOURCE_REF` y `CHXSEC_SOURCE_ARCHIVE_SHA256`; el instalador exige ambos, descarga la etiqueta `vX.Y.Z` o el commit completo de 40 caracteres y verifica el SHA-256 antes de extraerlo. Ejemplo para una release publicada:
+
+```bash
+export CHXSEC_SOURCE_REF=v0.2.0
+export CHXSEC_SOURCE_ARCHIVE_SHA256="<SHA-256 del archivo .tar.gz de esa release>"
+bash install-chxsec-fedora.sh
+```
+
+Usa el digest publicado para ese archivo fuente. También puedes fijar un commit completo en `CHXSEC_SOURCE_REF`.
 
 ### Instalar desde una copia local
 
@@ -112,6 +120,20 @@ chxsec doctor
 ```
 
 Usa `--dry-run` para revisar las acciones previstas sin cambiar el sistema. El instalador no inicia ni habilita Tor salvo que se pida expresamente con `--start-tor` o `--enable-tor`. La configuración es opcional: los ajustes pueden ir en `.env` o en variables `CHXSEC_*`; no subas archivos `.env` al repositorio.
+
+## Actualizar y desinstalar
+
+Mientras el bootstrap apunte a `dev`, una actualización descarga esa rama y sobrescribe los archivos de la instalación remota. Descarga de nuevo el bootstrap de tu distro con los comandos de la sección anterior y ejecútalo con `--no-system-packages` si las dependencias del sistema ya están instaladas. No hay rollback automático; conserva una copia del directorio de instalación si necesitas volver a la versión anterior.
+
+Antes de desinstalar, ejecuta `chxsec session destroy <id>` para cada sesión creada con los comandos manuales `network-apply`, `firewall-apply` o `tor-port-apply`. `session start` limpia su sesión cuando termina el comando. Guarda el identificador de las sesiones manuales: todavía no existe un comando para listarlas. Si la limpieza reporta un error, conserva la instalación y sigue el procedimiento de recuperación de `docs/TESTING_FEDORA.md`.
+
+Para una instalación remota, elimina solo los archivos de la herramienta:
+
+```bash
+rm -rf -- "$HOME/.local/share/chxchx-security"
+```
+
+Si configuraste `XDG_DATA_HOME` o `CHXSEC_INSTALL_DIR`, confirma y sustituye la ruta por el directorio exacto de esa instalación. Esto no elimina Tor, NetworkManager ni otros paquetes del sistema. Para una instalación desde un checkout, desactiva el entorno y elimina `.venv` solo si ya no lo necesitas; conserva el código fuente.
 
 ## Ejemplos
 
@@ -165,7 +187,7 @@ Los comandos JSON devuelven código de salida `0` solo si todas las comprobacion
 - La protección se aplica a procesos TCP compatibles que se ejecutan explícitamente con la herramienta; no protege todo el equipo.
 - El proyecto no borra registros del sistema, auditorías ni historiales de terceros.
 - `session plan` solo muestra una simulación: no crea namespaces ni cambia reglas del firewall.
-- `session network-plan` solo prepara el plan. `session network-apply --yes` es el primer comando privilegiado: crea el namespace y un par veth con direcciones, sin instalar rutas ni reglas de firewall. Si falla, revierte los recursos creados. Sin `--yes`, solo muestra los comandos. `session destroy` elimina el namespace y el veth.
+- `session network-plan` solo prepara el plan. `session network-apply --yes` es el primer comando privilegiado: crea el namespace y un par veth con direcciones, sin instalar rutas ni reglas de firewall. También crea `/etc/netns/<namespace>/resolv.conf` apuntando al gateway Tor para que `ip netns exec` use el DNS de la sesión; `session destroy` elimina ese archivo si sigue administrado por la herramienta. Si falla, revierte los recursos creados. Sin `--yes`, solo muestra los comandos. `session destroy` elimina el namespace y el veth.
 - `session tor-port-plan` solo muestra las directivas privadas `TransPort` y `DNSPort`. `session tor-port-apply --yes` escribe una configuración por sesión en `/etc/tor/torrc.d`, la valida con `tor --verify-config`, recarga Tor (no lo reinicia) y confirma que escucha en la dirección de gateway de la sesión. Si algo falla, revierte los cambios. Requiere que la interfaz ya esté conectada mediante `network-apply`. En sistemas con SELinux enforcing, registra los puertos configurados como `tor_port_t` con `semanage port` antes de escribir el archivo; los desregistra con `session destroy`. Ejecuta siempre `session destroy`: una configuración sobrante puede impedir que Tor arranque después de reiniciar el equipo; `doctor` también la detecta. El `DNSPort` predeterminado es 5300 porque mDNS suele ocupar 5353.
 - `session firewall-plan` muestra las reglas nftables de denegación por defecto sin aplicarlas. `session firewall-apply --yes` las valida con `nft -c` y las instala de forma atómica en dos tablas limitadas a la interfaz veth de esa sesión. Se niega a ejecutarse dos veces y no modifica otras tablas ni interfaces. `session destroy` elimina las tablas, el namespace y el veth.
 - `session start --yes <id> -- <comando>` coordina la sesión: conecta el namespace, instala el firewall y el listener Tor en ese orden, desactiva IPv6 dentro del namespace y añade la única ruta de la sesión a través del gateway. Luego ejecuta el comando como el usuario que inició la herramienta, sin privilegios elevados. El firewall redirige el tráfico TCP y DNS de ese namespace a Tor y descarta los demás protocolos, incluido IPv6. La limpieza se ejecuta al terminar el comando, también con Ctrl-C; si falla una etapa de preparación, revierte lo que alcanzó a crear.
