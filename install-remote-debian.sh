@@ -25,7 +25,7 @@ if [[ -n "$SOURCE_REF" ]]; then
 elif [[ -n "$CUSTOM_ARCHIVE_URL" ]]; then
   REPOSITORY_ARCHIVE_URL="$CUSTOM_ARCHIVE_URL"
 else
-  REPOSITORY_ARCHIVE_URL="https://github.com/chxchx-dev/chxchx-security-ip/archive/refs/heads/dev.tar.gz"
+  REPOSITORY_ARCHIVE_URL="https://github.com/chxchx-dev/chxchx-security-ip/archive/refs/heads/main.tar.gz"
 fi
 
 if [[ -n "$EXPECTED_SHA256" && ! "$EXPECTED_SHA256" =~ ^[[:xdigit:]]{64}$ ]]; then

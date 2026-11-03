@@ -2,7 +2,7 @@
   <h1>ChxChx Security</h1>
   <p><strong>Privacidad de red por proceso para Linux.</strong><br>Usa Tor donde tú lo decides, con comandos claros y sesiones aisladas cuando las necesitas.</p>
   <p>
-    <a href="https://github.com/chxchx-dev/chxchx-security-ip/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/chxchx-dev/chxchx-security-ip/ci.yml?branch=dev&amp;label=CI" alt="CI"></a>
+    <a href="https://github.com/chxchx-dev/chxchx-security-ip/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/chxchx-dev/chxchx-security-ip/ci.yml?branch=main&amp;label=CI" alt="CI"></a>
     <img src="https://img.shields.io/badge/estado-Alpha-orange" alt="Estado Alpha">
     <img src="https://img.shields.io/badge/sistema-Linux-blue" alt="Linux">
     <img src="https://img.shields.io/badge/Python-3.11%2B-blue" alt="Python 3.11 o posterior">
@@ -17,7 +17,7 @@
 </div>
 
 > [!WARNING]
-> **Versión Alpha 0.2.0.** Los instaladores rápidos descargan la rama mutable <code>dev</code>. La integración privilegiada en una VM desechable y las instalaciones limpias por distribución siguen pendientes.
+> **Versión Alpha 0.2.0.** La instalación recomendada descarga desde <code>main</code>. La rama mutable <code>dev</code> recibe mejoras en desarrollo antes de integrarse; puede cambiar sin aviso. La integración privilegiada en una VM desechable y las instalaciones limpias por distribución siguen pendientes.
 
 ## ¿Qué es ChxChx Security?
 
@@ -44,18 +44,18 @@ Los instaladores preparan un entorno Python en <code>~/.local/share/chxchx-secur
 
 | Distribución | Requisitos | Instalador |
 | --- | --- | --- |
-| Fedora | DNF · Python 3.11+ | [Descargar instalador](https://github.com/chxchx-dev/chxchx-security-ip/raw/refs/heads/dev/install-remote-fedora.sh?download=1) |
-| Ubuntu 24.04 o posterior | APT · Python 3.11+ | [Descargar instalador](https://github.com/chxchx-dev/chxchx-security-ip/raw/refs/heads/dev/install-remote-debian.sh?download=1) |
-| Kali Linux actual | APT · Python 3.11+ | [Descargar instalador](https://github.com/chxchx-dev/chxchx-security-ip/raw/refs/heads/dev/install-remote-debian.sh?download=1) |
+| Fedora | DNF · Python 3.11+ | [Descargar instalador](https://github.com/chxchx-dev/chxchx-security-ip/raw/refs/heads/main/install-remote-fedora.sh?download=1) |
+| Ubuntu 24.04 o posterior | APT · Python 3.11+ | [Descargar instalador](https://github.com/chxchx-dev/chxchx-security-ip/raw/refs/heads/main/install-remote-debian.sh?download=1) |
+| Kali Linux actual | APT · Python 3.11+ | [Descargar instalador](https://github.com/chxchx-dev/chxchx-security-ip/raw/refs/heads/main/install-remote-debian.sh?download=1) |
 
-[Descargar el código fuente (.tar.gz)](https://github.com/chxchx-dev/chxchx-security-ip/archive/refs/heads/dev.tar.gz)
+[Descargar el código fuente (.tar.gz)](https://github.com/chxchx-dev/chxchx-security-ip/archive/refs/heads/main.tar.gz)
 
 ### Fedora
 
 ~~~bash
 curl --fail --location --show-error --retry 3 --connect-timeout 20 --max-time 120 \
   --output install-chxsec-fedora.sh \
-  https://raw.githubusercontent.com/chxchx-dev/chxchx-security-ip/dev/install-remote-fedora.sh
+  https://raw.githubusercontent.com/chxchx-dev/chxchx-security-ip/main/install-remote-fedora.sh
 bash install-chxsec-fedora.sh
 ~~~
 
@@ -64,7 +64,7 @@ bash install-chxsec-fedora.sh
 ~~~bash
 curl --fail --location --show-error --retry 3 --connect-timeout 20 --max-time 120 \
   --output install-chxsec-debian.sh \
-  https://raw.githubusercontent.com/chxchx-dev/chxchx-security-ip/dev/install-remote-debian.sh
+  https://raw.githubusercontent.com/chxchx-dev/chxchx-security-ip/main/install-remote-debian.sh
 bash install-chxsec-debian.sh
 ~~~
 
@@ -175,7 +175,7 @@ El programa no guarda registros de ejecución por defecto ni recopila el nombre 
 
 ### Actualizar
 
-Descarga otra vez el instalador de tu distribución y ejecútalo. Por defecto sigue <code>dev</code> y reemplaza los archivos instalados; no ofrece rollback automático. Conserva una copia si necesitas volver a la versión anterior.
+Descarga otra vez el instalador de tu distribución y ejecútalo. Por defecto sigue <code>main</code> y reemplaza los archivos instalados; no ofrece rollback automático. La rama <code>dev</code> recibe mejoras en desarrollo antes de integrarse en <code>main</code>; úsala solo si quieres probar esos cambios.
 
 ### Desinstalar
 
@@ -217,6 +217,15 @@ bash install-chxsec-fedora.sh
 ~~~
 
 Reemplaza ambos valores de ejemplo. El bootstrap comprueba el SHA-256 antes de extraer el código.
+
+Para probar la versión en desarrollo en lugar de la instalación recomendada, puedes seleccionar explícitamente su archivo fuente:
+
+En Ubuntu o Kali, sustituye `install-chxsec-fedora.sh` por `install-chxsec-debian.sh`.
+
+~~~bash
+CHXSEC_SOURCE_ARCHIVE_URL="https://github.com/chxchx-dev/chxchx-security-ip/archive/refs/heads/dev.tar.gz" \
+  bash install-chxsec-fedora.sh
+~~~
 
 ### Ejecutar pruebas y build
 

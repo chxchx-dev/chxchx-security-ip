@@ -99,6 +99,64 @@ def test_remote_installer_rejects_archive_with_wrong_checksum(
         ("install-remote-debian.sh", "install-debian.sh"),
     ],
 )
+def test_remote_installer_defaults_to_main_archive(
+    tmp_path, remote_installer, local_installer
+):
+    archive = _create_source_archive(tmp_path, local_installer)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    curl_stub = bin_dir / "curl"
+    curl_stub.write_text(
+        "#!/usr/bin/env python3\n"
+        "import os\n"
+        "import shutil\n"
+        "import sys\n"
+        "arguments = sys.argv[1:]\n"
+        "with open(os.environ['CHXSEC_CURL_CAPTURE'], 'w', encoding='utf-8') as capture:\n"
+        "    capture.write(arguments[arguments.index('--output') - 1])\n"
+        "shutil.copyfile(os.environ['CHXSEC_TEST_ARCHIVE'], "
+        "arguments[arguments.index('--output') + 1])\n",
+        encoding="utf-8",
+    )
+    curl_stub.chmod(0o755)
+
+    install_dir = tmp_path / "local-install"
+    capture_path = tmp_path / "curl-url.txt"
+    environment = os.environ.copy()
+    for variable in (
+        "CHXSEC_SOURCE_REF",
+        "CHXSEC_SOURCE_ARCHIVE_SHA256",
+        "CHXSEC_SOURCE_ARCHIVE_URL",
+    ):
+        environment.pop(variable, None)
+    environment["PATH"] = f"{bin_dir}{os.pathsep}{environment.get('PATH', '')}"
+    environment["CHXSEC_TEST_ARCHIVE"] = str(archive)
+    environment["CHXSEC_CURL_CAPTURE"] = str(capture_path)
+    environment["CHXSEC_INSTALL_DIR"] = str(install_dir)
+
+    result = subprocess.run(
+        ["bash", str(PROJECT_ROOT / remote_installer), "--dry-run"],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=environment,
+        timeout=15,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert capture_path.read_text(encoding="utf-8") == (
+        "https://github.com/chxchx-dev/chxchx-security-ip/archive/refs/heads/main.tar.gz"
+    )
+    assert (install_dir / local_installer).is_file()
+
+
+@pytest.mark.parametrize(
+    ("remote_installer", "local_installer"),
+    [
+        ("install-remote-fedora.sh", "install-fedora.sh"),
+        ("install-remote-debian.sh", "install-debian.sh"),
+    ],
+)
 @pytest.mark.parametrize(
     ("source_ref", "expected_url"),
     [
