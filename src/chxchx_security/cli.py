@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import shlex
 import sys
 
-from rich.prompt import Prompt
+from rich.prompt import Confirm, Prompt
 
 from chxchx_security import __version__
 from chxchx_security.config import ConfigurationError, Settings
@@ -34,9 +35,17 @@ from chxchx_security.services.tor import (
     service_state,
     socks_reachable,
     start_service,
+    stop_service,
     verify,
 )
-from chxchx_security.ui import checks_table, console, header, print_signature
+from chxchx_security.ui import (
+    checks_table,
+    console,
+    header,
+    print_signature,
+    prompt_interactive_menu,
+    show_command_guide,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -53,6 +62,7 @@ def build_parser() -> argparse.ArgumentParser:
     tor_sub = tor.add_subparsers(dest="tor_command", required=True)
     tor_sub.add_parser("status")
     tor_sub.add_parser("start")
+    tor_sub.add_parser("stop", help="Stop the Tor system service")
     verify_p = tor_sub.add_parser("verify")
     verify_p.add_argument("--reveal-ip", action="store_true")
     verify_p.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
@@ -195,39 +205,106 @@ def _verification_json(result) -> str:
 
 def _interactive(settings: Settings) -> int:
     header(__version__)
-    console.print()
-    console.print("[bold]1[/] Doctor / audit")
-    console.print("[bold]2[/] Start Tor")
-    console.print("[bold]3[/] Verify Tor route")
-    console.print("[bold]4[/] Open protected shell")
-    console.print("[bold]5[/] List active NetworkManager profiles")
-    console.print("[bold]0[/] Exit")
-    choice = Prompt.ask("Select", choices=["0", "1", "2", "3", "4", "5"], default="1")
-    if choice == "0":
-        return 0
-    if choice == "1":
-        checks = doctor(settings)
-        checks_table(checks)
-        return 0 if _checks_ok(checks) else 1
-    if choice == "2":
-        result = start_service()
-        console.print("[green]Tor started[/]" if result.ok else f"[red]{result.stderr or result.stdout}[/]")
-        return 0 if result.ok else 1
-    if choice == "3":
-        result = verify(settings)
-        if result.ok:
-            console.print(f"[green]{result.detail}[/] exit={result.ip or 'hidden'}")
+    console.print("Bienvenido. Elige una opción; puedes volver aquí después de cada acción.")
+    console.print("Tor seguirá activo al salir del menú hasta que elijas detenerlo.")
+    last_status = 0
+
+    while True:
+        try:
+            choice = prompt_interactive_menu()
+            if choice == "0":
+                console.print("Hasta luego.")
+                return last_status
+            if choice == "1":
+                checks = doctor(settings)
+                checks_table(checks)
+                last_status = 0 if _checks_ok(checks) else 1
+            elif choice == "2":
+                result = start_service()
+                if result.ok:
+                    console.print(
+                        "[green]Tor se inició y seguirá activo al salir del menú.[/]"
+                    )
+                    console.print("Elige 3 o ejecuta chxsec tor stop cuando quieras detenerlo.")
+                else:
+                    console.print(f"[red]{result.stderr or result.stdout}[/]")
+                last_status = 0 if result.ok else 1
+            elif choice == "3":
+                if Confirm.ask(
+                    "Esto detendrá Tor también para otras aplicaciones. ¿Continuar?",
+                    default=False,
+                ):
+                    result = stop_service()
+                    if result.ok:
+                        console.print("[green]Tor se detuvo.[/]")
+                    else:
+                        console.print(f"[red]{result.stderr or result.stdout}[/]")
+                    last_status = 0 if result.ok else 1
+                else:
+                    console.print("No se detuvo Tor.")
+                    last_status = 0
+            elif choice == "4":
+                state = service_state()
+                console.print(f"Estado del servicio Tor: {state}")
+                last_status = 0 if state == "active" else 1
+            elif choice == "5":
+                result = verify(settings)
+                if result.ok:
+                    console.print(
+                        f"[green]{result.detail}[/] "
+                        f"(IP de salida: {result.ip or 'oculta'})"
+                    )
+                else:
+                    console.print(f"[red]{result.detail}[/]")
+                last_status = 0 if result.ok else 1
+            elif choice == "6":
+                console.print(
+                    "[yellow]Esta shell protege programas TCP compatibles; "
+                    "no es un túnel para todo el equipo.[/]"
+                )
+                try:
+                    last_status = protected_shell(settings)
+                except RuntimeError as exc:
+                    console.print(f"[red]{exc}[/]")
+                    last_status = 1
+            elif choice == "7":
+                items = active_connections()
+                if not items:
+                    console.print("No se encontraron perfiles activos.")
+                for item in items:
+                    console.print(f"- {connection_label(item)}")
+                last_status = 0
+            elif choice == "8":
+                raw_command = Prompt.ask(
+                    "Programa y argumentos, sin pipes ni redirecciones "
+                    "(ej.: curl https://example.com)",
+                    default="",
+                )
+                try:
+                    command = shlex.split(raw_command)
+                except ValueError as exc:
+                    console.print(f"[red]No pude interpretar el comando: {exc}[/]")
+                    last_status = 2
+                else:
+                    if not command:
+                        console.print("No se escribió ningún comando.")
+                    else:
+                        try:
+                            last_status = run_protected(settings, command)
+                        except RuntimeError as exc:
+                            console.print(f"[red]{exc}[/]")
+                            last_status = 1
+                        console.print(f"El comando terminó con código {last_status}.")
+            elif choice == "9":
+                show_command_guide()
+
+            Prompt.ask("Presiona Enter para volver al menú", default="")
+        except KeyboardInterrupt:
+            console.print("\nMenú interrumpido.")
+            return 130
+        except EOFError:
+            console.print("\nFin de la entrada.")
             return 0
-        console.print(f"[red]{result.detail}[/]")
-        return 1
-    if choice == "4":
-        console.print("[yellow]This shell protects compatible TCP apps; it is not a whole-host tunnel.[/]")
-        return protected_shell(settings)
-    if choice == "5":
-        for item in active_connections():
-            console.print(f"- {connection_label(item)}")
-        return 0
-    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -240,6 +317,9 @@ def main(argv: list[str] | None = None) -> int:
         parser.error(str(exc))
 
     if args.command is None:
+        if not sys.stdin.isatty():
+            parser.print_help()
+            return 0
         return _interactive(settings)
 
     if args.command in {"doctor", "audit"}:
@@ -258,6 +338,10 @@ def main(argv: list[str] | None = None) -> int:
         if args.tor_command == "start":
             result = start_service()
             console.print("Tor started" if result.ok else result.stderr or result.stdout)
+            return 0 if result.ok else 1
+        if args.tor_command == "stop":
+            result = stop_service()
+            console.print("Tor stopped" if result.ok else result.stderr or result.stdout)
             return 0 if result.ok else 1
         if args.tor_command == "verify":
             result = verify(settings, reveal_ip=args.reveal_ip)

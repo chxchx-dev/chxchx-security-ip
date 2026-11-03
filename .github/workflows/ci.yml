@@ -46,7 +46,7 @@ jobs:
         run: python -m compileall -q src
 
   installer-distro-smoke:
-    name: Python/bootstrap tests (${{ matrix.distro }})
+    name: Local installer smoke (${{ matrix.distro }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -74,14 +74,20 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Set up project environment
+      - name: Install through the distro-specific local installer
         run: |
-          python3 -m venv .venv
-          .venv/bin/python -m pip install --upgrade pip
-          .venv/bin/python -m pip install -e . pytest
+          if command -v dnf >/dev/null 2>&1; then
+            ./install-fedora.sh --no-system-packages
+          else
+            ./install-debian.sh --no-system-packages
+          fi
+          .venv/bin/chxsec --version
+          .venv/bin/chxsec --help
 
       - name: Run test suite
-        run: .venv/bin/python -m pytest
+        run: |
+          .venv/bin/python -m pip install pytest
+          .venv/bin/python -m pytest
 
       - name: Validate installer syntax
         run: bash -n install-fedora.sh install-remote-fedora.sh install-debian.sh install-remote-debian.sh

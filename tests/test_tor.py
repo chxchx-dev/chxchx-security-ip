@@ -76,3 +76,16 @@ def test_protected_run_requires_verified_route(monkeypatch):
         assert "not_tor" in str(exc)
     else:
         raise AssertionError("protected execution must refuse an unverified route")
+
+def test_stop_service_uses_systemctl(monkeypatch):
+    commands = []
+    expected = object()
+    monkeypatch.setattr(tor, "exists", lambda command: command == "systemctl")
+    monkeypatch.setattr(
+        tor,
+        "run",
+        lambda argv, timeout: commands.append((argv, timeout)) or expected,
+    )
+
+    assert tor.stop_service() is expected
+    assert commands == [(["sudo", "systemctl", "stop", "tor.service"], 30)]

@@ -12,10 +12,12 @@
 
                       by @chxchx-dev
 
-                [ SYSTEM STATUS: SECURED ]
+                [ RELEASE STATUS: ALPHA ]
 ```
 
-# ChxChx Security v0.2.0
+# ChxChx Security v0.2.0 — Alpha
+
+Los enlaces de instalación desde GitHub apuntan a la rama cambiante `dev`; esta versión todavía no se distribuye desde una release fijada. Úsala solo si entiendes y aceptas los límites descritos abajo.
 
 Herramienta de privacidad y seguridad para la terminal de Fedora, Ubuntu y Kali Linux. Permite ejecutar programas compatibles a través de Tor, comprobar la conexión Tor, reducir metadatos locales accidentales y administrar opciones de privacidad MAC de NetworkManager.
 
@@ -24,7 +26,7 @@ No promete volver invisible el equipo ni borrar rastros forenses. Solo protege l
 ## Para qué sirve
 
 - Comprobar dependencias y preparación del sistema con `chxsec doctor`, sin imprimir usuario, hostname, números de serie ni MAC permanentes.
-- Iniciar, consultar y verificar el servicio Tor con `chxsec tor`.
+- Iniciar, consultar, verificar y detener el servicio Tor con `chxsec tor`.
 - Ejecutar programas compatibles mediante Tor con `chxsec run -- <comando>`.
 - Abrir una shell temporal protegida con `chxsec shell`, sin guardar historial de esa shell.
 - Consultar o cambiar las políticas MAC clonadas de NetworkManager.
@@ -38,6 +40,14 @@ La herramienta coordina Tor y utilidades existentes del sistema. No incluye crip
 ChxChx Security puede reducir la exposición de la IP pública para aplicaciones TCP compatibles que se ejecuten explícitamente a través de la herramienta. No anonimiza automáticamente todos los procesos del equipo. UDP, aplicaciones enlazadas estáticamente, aplicaciones aisladas, huellas del navegador, plugins, sesiones de cuenta, cookies, WebRTC, telemetría y comportamiento todavía pueden identificar al usuario.
 
 Para navegar de forma anónima, usa Tor Browser. Un navegador normal no se vuelve anónimo solo por usar un proxy.
+
+## Menú y control de Tor
+
+Ejecuta `chxsec` sin argumentos desde una terminal para abrir el menú interactivo. Allí puedes revisar el sistema, iniciar o detener Tor, comprobar su estado, verificar la ruta, ejecutar un programa protegido y consultar una guía de comandos.
+
+Tor funciona como un servicio del sistema. Si lo inicias desde el menú, seguirá activo cuando salgas; cerrar el menú no lo detiene. Para detenerlo, elige la opción **Detener Tor** o ejecuta `chxsec tor stop`. El menú pide confirmación porque detener el servicio también interrumpe otras aplicaciones que lo estén usando.
+
+Iniciar Tor no cambia la ruta de todo el equipo ni cifra globalmente la IP. Solo los programas ejecutados explícitamente con `chxsec run`, `chxsec shell` o una sesión aislada usan la ruta protegida. Para una sesión puntual, inicia Tor, ejecuta y verifica el programa, y luego detén el servicio si ninguna otra aplicación lo necesita.
 
 ## Instalación
 
@@ -88,8 +98,11 @@ Cuando termine cualquiera de los instaladores, activa el entorno:
 ```bash
 source ~/.local/share/chxchx-security/.venv/bin/activate
 chxsec doctor
+chxsec tor start
 chxsec tor verify
 ```
+
+También puedes ejecutar `chxsec` para abrir el menú y seguir la guía inicial. Tor no se inicia automáticamente durante la instalación.
 
 Los enlaces directos apuntan a la rama `dev`. También puedes usar otro archivo con `CHXSEC_SOURCE_ARCHIVE_URL` o elegir otra carpeta con `CHXSEC_INSTALL_DIR`. Para fijar el código a una release o commit, define `CHXSEC_SOURCE_REF` y `CHXSEC_SOURCE_ARCHIVE_SHA256`; el instalador exige ambos, descarga la etiqueta `vX.Y.Z` o el commit completo de 40 caracteres y verifica el SHA-256 antes de extraerlo. Ejemplo para una release publicada:
 
@@ -125,7 +138,7 @@ Usa `--dry-run` para revisar las acciones previstas sin cambiar el sistema. El i
 
 Mientras el bootstrap apunte a `dev`, una actualización descarga esa rama y sobrescribe los archivos de la instalación remota. Descarga de nuevo el bootstrap de tu distro con los comandos de la sección anterior y ejecútalo con `--no-system-packages` si las dependencias del sistema ya están instaladas. No hay rollback automático; conserva una copia del directorio de instalación si necesitas volver a la versión anterior.
 
-Antes de desinstalar, ejecuta `chxsec session destroy <id>` para cada sesión creada con los comandos manuales `network-apply`, `firewall-apply` o `tor-port-apply`. `session start` limpia su sesión cuando termina el comando. Guarda el identificador de las sesiones manuales: todavía no existe un comando para listarlas. Si la limpieza reporta un error, conserva la instalación y sigue el procedimiento de recuperación de `docs/TESTING_FEDORA.md`.
+Antes de desinstalar, ejecuta `chxsec session destroy <id>` para cada sesión creada con los comandos manuales `network-apply`, `firewall-apply` o `tor-port-apply`. `session start` limpia su sesión cuando termina el comando. Guarda el identificador de las sesiones manuales: todavía no existe un comando para listarlas. Si lo perdiste o la limpieza reporta un error, sigue la [guía pública de recuperación](RECOVERY.md); no borres recursos de red o firewall por nombre supuesto.
 
 Para una instalación remota, elimina solo los archivos de la herramienta:
 
@@ -141,13 +154,15 @@ Si configuraste `XDG_DATA_HOME` o `CHXSEC_INSTALL_DIR`, confirma y sustituye la 
 chxsec doctor
 chxsec doctor --json
 chxsec tor status
+chxsec tor start
 chxsec tor verify
 chxsec tor verify --json
+chxsec tor stop
 chxsec run -- curl https://example.com
 chxsec shell
 chxsec mac list
 chxsec mac list --reveal-identifiers
-chxsec mac apply "My WiFi" random
+chxsec mac apply "Mi WiFi" random
 chxsec session tools
 chxsec session plan demo
 chxsec session network-plan demo --subnet 10.203.0.0/30
