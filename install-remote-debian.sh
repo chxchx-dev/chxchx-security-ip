@@ -11,9 +11,9 @@ if [[ -n "$SOURCE_REF" ]]; then
     exit 1
   fi
   if [[ "$SOURCE_REF" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$ ]]; then
-    REPOSITORY_ARCHIVE_URL="https://github.com/chxchx-dev/chxchx-security/archive/refs/tags/$SOURCE_REF.tar.gz"
+    REPOSITORY_ARCHIVE_URL="https://github.com/chxchx-dev/chxchx-security-ip/archive/refs/tags/$SOURCE_REF.tar.gz"
   elif [[ "$SOURCE_REF" =~ ^[[:xdigit:]]{40}$ ]]; then
-    REPOSITORY_ARCHIVE_URL="https://github.com/chxchx-dev/chxchx-security/archive/$SOURCE_REF.tar.gz"
+    REPOSITORY_ARCHIVE_URL="https://github.com/chxchx-dev/chxchx-security-ip/archive/$SOURCE_REF.tar.gz"
   else
     echo "CHXSEC_SOURCE_REF must be a release tag (for example v0.2.0) or a 40-character commit SHA." >&2
     exit 1
@@ -25,7 +25,7 @@ if [[ -n "$SOURCE_REF" ]]; then
 elif [[ -n "$CUSTOM_ARCHIVE_URL" ]]; then
   REPOSITORY_ARCHIVE_URL="$CUSTOM_ARCHIVE_URL"
 else
-  REPOSITORY_ARCHIVE_URL="https://github.com/chxchx-dev/chxchx-security/archive/refs/heads/dev.tar.gz"
+  REPOSITORY_ARCHIVE_URL="https://github.com/chxchx-dev/chxchx-security-ip/archive/refs/heads/dev.tar.gz"
 fi
 
 if [[ -n "$EXPECTED_SHA256" && ! "$EXPECTED_SHA256" =~ ^[[:xdigit:]]{64}$ ]]; then

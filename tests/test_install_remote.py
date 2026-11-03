@@ -104,11 +104,11 @@ def test_remote_installer_rejects_archive_with_wrong_checksum(
     [
         (
             "v0.2.0",
-            "https://github.com/chxchx-dev/chxchx-security/archive/refs/tags/v0.2.0.tar.gz",
+            "https://github.com/chxchx-dev/chxchx-security-ip/archive/refs/tags/v0.2.0.tar.gz",
         ),
         (
             "0123456789abcdef0123456789abcdef01234567",
-            "https://github.com/chxchx-dev/chxchx-security/archive/0123456789abcdef0123456789abcdef01234567.tar.gz",
+            "https://github.com/chxchx-dev/chxchx-security-ip/archive/0123456789abcdef0123456789abcdef01234567.tar.gz",
         ),
     ],
 )
