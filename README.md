@@ -1,230 +1,229 @@
-```text
-   ██████╗██╗  ██╗██╗  ██╗ ██████╗██╗  ██╗██╗  ██╗
-  ██╔════╝██║  ██║╚██╗██╔╝██╔════╝██║  ██║╚██╗██╔╝
-  ██║     ███████║ ╚███╔╝ ██║     ███████║ ╚███╔╝
-  ██║     ██╔══██║ ██╔██╗ ██║     ██╔══██║ ██╔██╗
-  ╚██████╗██║  ██║██╔╝ ██╗╚██████╗██║  ██║██╔╝ ██╗
-   ╚═════╝╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝╚═╝  ╚═╝╚═╝  ╚═╝
+# ChxChx Security
 
-              C H X C H X   S E C U R I T Y
+**Herramienta de terminal para Linux que ayuda a ejecutar aplicaciones compatibles a través de Tor y a crear sesiones de red aisladas.**
 
-               PRIVACY • SECURITY • CONTROL
+<p>
+  <strong>Versión:</strong> 0.2.0 Alpha ·
+  <strong>Sistemas:</strong> Fedora, Ubuntu y Kali Linux ·
+  <strong>Licencia:</strong> MIT
+</p>
 
-                      by @chxchx-dev
+> **Estado Alpha:** los instaladores públicos siguen la rama mutable <code>dev</code>; esta versión todavía no se considera una release validada. La integración privilegiada en una VM desechable y las instalaciones limpias por distribución siguen pendientes.
 
-                [ RELEASE STATUS: ALPHA ]
-```
+## Qué ofrece
 
-# ChxChx Security v0.2.0 — Alpha
+ChxChx Security reúne herramientas existentes de Linux para que puedas comprobar y controlar qué procesos usan una ruta de red a través de Tor. No incluye criptografía ni un proxy propios: coordina Tor, <code>torsocks</code>, NetworkManager, namespaces y <code>nftables</code>.
 
-Los enlaces de instalación desde GitHub apuntan a la rama cambiante `dev`; esta versión todavía no se distribuye desde una release fijada. Úsala solo si entiendes y aceptas los límites descritos abajo.
+| Función | Uso |
+| --- | --- |
+| Revisar requisitos y estado local | <code>chxsec doctor</code> |
+| Iniciar, detener y comprobar Tor | <code>chxsec tor</code> |
+| Ejecutar un programa compatible mediante Tor | <code>chxsec run -- &lt;comando&gt;</code> |
+| Abrir una shell temporal mediante Tor | <code>chxsec shell</code> |
+| Preparar una sesión de red aislada | <code>chxsec session</code> |
+| Consultar o cambiar la política MAC de NetworkManager | <code>chxsec mac</code> |
+| Abrir el menú guiado | <code>chxsec</code> |
 
-Herramienta de privacidad y seguridad para la terminal de Fedora, Ubuntu y Kali Linux. Permite ejecutar programas compatibles a través de Tor, comprobar la conexión Tor, reducir metadatos locales accidentales y administrar opciones de privacidad MAC de NetworkManager.
+## Cómo se usa
 
-No promete volver invisible el equipo ni borrar rastros forenses. Solo protege los procesos que el usuario ejecuta explícitamente con la herramienta y dentro de los límites descritos más abajo.
+~~~text
+ChxChx Security
+      │
+      ├── Comprueba el sistema: doctor
+      ├── Prepara Tor: tor start / tor verify
+      └── Ejecuta solo el proceso elegido:
+             run, shell o session start
+~~~
 
-## Para qué sirve
+Iniciar Tor no cambia la conexión de todo el equipo ni activa una “IP cifrada” global. La protección se aplica únicamente a los procesos que ejecutas expresamente mediante la herramienta.
 
-- Comprobar dependencias y preparación del sistema con `chxsec doctor`, sin imprimir usuario, hostname, números de serie ni MAC permanentes.
-- Iniciar, consultar, verificar y detener el servicio Tor con `chxsec tor`.
-- Ejecutar programas compatibles mediante Tor con `chxsec run -- <comando>`.
-- Abrir una shell temporal protegida con `chxsec shell`, sin guardar historial de esa shell.
-- Consultar o cambiar las políticas MAC clonadas de NetworkManager.
-- Ejecutar un comando dentro de una sesión de red aislada con namespace, firewall nftables de denegación por defecto y listener Tor privado mediante `chxsec session start`.
-- Revisar resultados de preparación y verificación en JSON, por ejemplo con `chxsec doctor --json`.
+## Sistemas compatibles
 
-La herramienta coordina Tor y utilidades existentes del sistema. No incluye criptografía propia ni implementa un proxy propio. La configuración es opcional; los valores predeterminados funcionan sin archivo `.env`.
+| Distribución | Requisitos principales |
+| --- | --- |
+| Fedora | Python 3.11 o posterior; instalador con DNF |
+| Ubuntu 24.04 o posterior | Python 3.11 o posterior; instalador con APT |
+| Kali Linux actual | Python 3.11 o posterior; instalador con APT |
 
-## Límite de protección
+Los instaladores preparan un entorno Python local en <code>~/.local/share/chxchx-security</code> y pueden instalar Tor, <code>torsocks</code>, NetworkManager, <code>iproute2</code> y <code>nftables</code>. Solicitan confirmación antes de instalar paquetes del sistema; <code>--yes</code> permite aceptar esa instalación sin la pregunta interactiva.
 
-ChxChx Security puede reducir la exposición de la IP pública para aplicaciones TCP compatibles que se ejecuten explícitamente a través de la herramienta. No anonimiza automáticamente todos los procesos del equipo. UDP, aplicaciones enlazadas estáticamente, aplicaciones aisladas, huellas del navegador, plugins, sesiones de cuenta, cookies, WebRTC, telemetría y comportamiento todavía pueden identificar al usuario.
+## Instalación rápida
 
-Para navegar de forma anónima, usa Tor Browser. Un navegador normal no se vuelve anónimo solo por usar un proxy.
+Descarga el instalador como archivo y luego ejecútalo desde una terminal. No lo canalices directamente con <code>curl | bash</code>.
 
-## Menú y control de Tor
-
-Ejecuta `chxsec` sin argumentos desde una terminal para abrir el menú interactivo. Allí puedes revisar el sistema, iniciar o detener Tor, comprobar su estado, verificar la ruta, ejecutar un programa protegido y consultar una guía de comandos.
-
-Tor funciona como un servicio del sistema. Si lo inicias desde el menú, seguirá activo cuando salgas; cerrar el menú no lo detiene. Para detenerlo, elige la opción **Detener Tor** o ejecuta `chxsec tor stop`. El menú pide confirmación porque detener el servicio también interrumpe otras aplicaciones que lo estén usando.
-
-Iniciar Tor no cambia la ruta de todo el equipo ni cifra globalmente la IP. Solo los programas ejecutados explícitamente con `chxsec run`, `chxsec shell` o una sesión aislada usan la ruta protegida. Para una sesión puntual, inicia Tor, ejecuta y verifica el programa, y luego detén el servicio si ninguna otra aplicación lo necesita.
-
-## Instalación
-
-Los instaladores preparan un entorno Python local en `~/.local/share/chxchx-security` cuando se descargan desde GitHub. No usan Docker, contenedores ni volúmenes montados. Piden confirmación antes de instalar paquetes del sistema; `sudo` puede pedir la contraseña.
+[Instalador Fedora](https://github.com/chxchx-dev/chxchx-security/raw/refs/heads/dev/install-remote-fedora.sh?download=1) · [Instalador Ubuntu y Kali](https://github.com/chxchx-dev/chxchx-security/raw/refs/heads/dev/install-remote-debian.sh?download=1) · [Código fuente](https://github.com/chxchx-dev/chxchx-security/archive/refs/heads/dev.tar.gz)
 
 ### Fedora
 
-[Descargar instalador para Fedora](https://github.com/chxchx-dev/chxchx-security/raw/refs/heads/dev/install-remote-fedora.sh?download=1) · [Descargar código fuente `.tar.gz`](https://github.com/chxchx-dev/chxchx-security/archive/refs/heads/dev.tar.gz)
-
-En la terminal de Fedora, descarga y ejecuta el instalador en dos pasos:
-
-```bash
+~~~bash
 curl --fail --location --show-error --retry 3 --connect-timeout 20 --max-time 120 \
   --output install-chxsec-fedora.sh \
   https://raw.githubusercontent.com/chxchx-dev/chxchx-security/dev/install-remote-fedora.sh
 bash install-chxsec-fedora.sh
-```
-
-El instalador muestra el progreso de descarga, usa un tiempo máximo y luego descarga el código fuente y prepara el entorno. Ejecutarlo desde un archivo permite que la pregunta de confirmación y `sudo` lean desde la terminal; no lo canalices con `curl | bash`. Para aceptar la instalación de paquetes sin confirmación, añade `--yes`:
-
-```bash
-bash install-chxsec-fedora.sh --yes
-```
+~~~
 
 ### Ubuntu y Kali Linux
 
-Ubuntu 24.04 o posterior y Kali Linux actual comparten APT y requieren Python 3.11 o posterior, así que usan el mismo instalador:
-
-[Descargar instalador para Ubuntu](https://github.com/chxchx-dev/chxchx-security/raw/refs/heads/dev/install-remote-debian.sh?download=1) · [Descargar instalador para Kali Linux](https://github.com/chxchx-dev/chxchx-security/raw/refs/heads/dev/install-remote-debian.sh?download=1) · [Descargar código fuente `.tar.gz`](https://github.com/chxchx-dev/chxchx-security/archive/refs/heads/dev.tar.gz)
-
-Descárgalo y ejecútalo desde una terminal de Ubuntu o Kali:
-
-```bash
+~~~bash
 curl --fail --location --show-error --retry 3 --connect-timeout 20 --max-time 120 \
   --output install-chxsec-debian.sh \
   https://raw.githubusercontent.com/chxchx-dev/chxchx-security/dev/install-remote-debian.sh
 bash install-chxsec-debian.sh
-```
+~~~
 
-Este instalador detecta Ubuntu o Kali, muestra el progreso al descargar y prepara Python, Tor, torsocks, NetworkManager, iproute2 y nftables con APT. También instala el proyecto en un `.venv` local. Para saltar la confirmación de paquetes, usa:
+Al terminar:
 
-```bash
-bash install-chxsec-debian.sh --yes
-```
-
-Cuando termine cualquiera de los instaladores, activa el entorno:
-
-```bash
+~~~bash
 source ~/.local/share/chxchx-security/.venv/bin/activate
 chxsec doctor
-chxsec tor start
-chxsec tor verify
-```
+chxsec
+~~~
 
-También puedes ejecutar `chxsec` para abrir el menú y seguir la guía inicial. Tor no se inicia automáticamente durante la instalación.
+El primer comando comprueba las dependencias. El último abre el menú interactivo; Tor no se inicia automáticamente al instalar.
 
-Los enlaces directos apuntan a la rama `dev`. También puedes usar otro archivo con `CHXSEC_SOURCE_ARCHIVE_URL` o elegir otra carpeta con `CHXSEC_INSTALL_DIR`. Para fijar el código a una release o commit, define `CHXSEC_SOURCE_REF` y `CHXSEC_SOURCE_ARCHIVE_SHA256`; el instalador exige ambos, descarga la etiqueta `vX.Y.Z` o el commit completo de 40 caracteres y verifica el SHA-256 antes de extraerlo. Ejemplo para una release publicada:
+También puedes revisar las acciones del instalador sin cambiar el sistema usando <code>--dry-run</code>. Para omitir la confirmación de paquetes, pasa <code>--yes</code> al instalador:
 
-```bash
-export CHXSEC_SOURCE_REF=v0.2.0
-export CHXSEC_SOURCE_ARCHIVE_SHA256="<SHA-256 del archivo .tar.gz de esa release>"
-bash install-chxsec-fedora.sh
-```
+~~~bash
+bash install-chxsec-fedora.sh --dry-run
+bash install-chxsec-fedora.sh --yes
+~~~
 
-Usa el digest publicado para ese archivo fuente. También puedes fijar un commit completo en `CHXSEC_SOURCE_REF`.
+Ubuntu y Kali usan <code>install-chxsec-debian.sh</code> en los ejemplos.
 
-### Instalar desde una copia local
+## Menú y ciclo de Tor
 
-Desde un checkout de Fedora:
+Cuando <code>chxsec</code> se ejecuta en una terminal, muestra un menú en español con acciones para:
 
-```bash
-./install-fedora.sh --yes
-source .venv/bin/activate
-chxsec doctor
-```
+1. Revisar el sistema.
+2. Iniciar Tor.
+3. Detener Tor, con confirmación.
+4. Consultar el estado del servicio.
+5. Verificar la ruta Tor.
+6. Abrir una shell protegida.
+7. Consultar perfiles de NetworkManager.
+8. Ejecutar un comando protegido.
+9. Consultar ejemplos de comandos.
 
-Desde un checkout de Ubuntu o Kali:
+Si no hay una terminal interactiva, <code>chxsec</code> muestra la ayuda de la CLI. Al ejecutar un comando desde el menú, la herramienta separa sus argumentos sin pasarlos a un shell.
 
-```bash
-./install-debian.sh --yes
-source .venv/bin/activate
-chxsec doctor
-```
+Salir del menú **no detiene Tor**. Es un servicio del sistema que puede estar usando otra aplicación. Deténlo de forma explícita con la opción 3 o con:
 
-Usa `--dry-run` para revisar las acciones previstas sin cambiar el sistema. El instalador no inicia ni habilita Tor salvo que se pida expresamente con `--start-tor` o `--enable-tor`. La configuración es opcional: los ajustes pueden ir en `.env` o en variables `CHXSEC_*`; no subas archivos `.env` al repositorio.
+~~~bash
+chxsec tor stop
+~~~
 
-## Actualizar y desinstalar
+Detener Tor interrumpe también las aplicaciones que dependan de ese servicio. Para una operación puntual, comprueba si Tor ya está en uso antes de detenerlo.
 
-Mientras el bootstrap apunte a `dev`, una actualización descarga esa rama y sobrescribe los archivos de la instalación remota. Descarga de nuevo el bootstrap de tu distro con los comandos de la sección anterior y ejecútalo con `--no-system-packages` si las dependencias del sistema ya están instaladas. No hay rollback automático; conserva una copia del directorio de instalación si necesitas volver a la versión anterior.
+## Comandos habituales
 
-Antes de desinstalar, ejecuta `chxsec session destroy <id>` para cada sesión creada con los comandos manuales `network-apply`, `firewall-apply` o `tor-port-apply`. `session start` limpia su sesión cuando termina el comando. Guarda el identificador de las sesiones manuales: todavía no existe un comando para listarlas. Si lo perdiste o la limpieza reporta un error, sigue la [guía pública de recuperación](RECOVERY.md); no borres recursos de red o firewall por nombre supuesto.
-
-Para una instalación remota, elimina solo los archivos de la herramienta:
-
-```bash
-rm -rf -- "$HOME/.local/share/chxchx-security"
-```
-
-Si configuraste `XDG_DATA_HOME` o `CHXSEC_INSTALL_DIR`, confirma y sustituye la ruta por el directorio exacto de esa instalación. Esto no elimina Tor, NetworkManager ni otros paquetes del sistema. Para una instalación desde un checkout, desactiva el entorno y elimina `.venv` solo si ya no lo necesitas; conserva el código fuente.
-
-## Ejemplos
-
-```bash
+~~~bash
 chxsec doctor
 chxsec doctor --json
 chxsec tor status
 chxsec tor start
 chxsec tor verify
-chxsec tor verify --json
 chxsec tor stop
 chxsec run -- curl https://example.com
 chxsec shell
 chxsec mac list
-chxsec mac list --reveal-identifiers
 chxsec mac apply "Mi WiFi" random
+~~~
+
+La verificación oculta la IP detectada de forma predeterminada. Usa <code>chxsec tor verify --reveal-ip</code> solo si quieres mostrarla expresamente.
+
+Aplicar una política MAC modifica el perfil seleccionado en NetworkManager. Añade <code>--reconnect</code> solo si estás preparado para que la conexión se interrumpa y se vuelva a conectar.
+
+## Sesiones aisladas
+
+Las sesiones avanzadas combinan un namespace de red, un par virtual <code>veth</code>, reglas de firewall y listeners Tor privados. Primero puedes ver los requisitos y el plan sin aplicar cambios:
+
+~~~bash
 chxsec session tools
 chxsec session plan demo
 chxsec session network-plan demo --subnet 10.203.0.0/30
-chxsec session tor-port-plan 10.203.0.1
 chxsec session firewall-plan demo --subnet 10.203.0.0/30
-chxsec session network-apply demo --subnet 10.203.0.0/30        # simulación
-chxsec session network-apply demo --subnet 10.203.0.0/30 --yes  # privilegiado
-chxsec session firewall-apply demo --subnet 10.203.0.0/30        # simulación
-chxsec session firewall-apply demo --subnet 10.203.0.0/30 --yes  # privilegiado
-chxsec session tor-port-apply demo --subnet 10.203.0.0/30        # simulación
-chxsec session tor-port-apply demo --subnet 10.203.0.0/30 --yes  # privilegiado
-chxsec session start demo -- curl https://example.com          # simulación
-chxsec session start --yes demo -- curl https://example.com    # privilegiado
+chxsec session tor-port-plan 10.203.0.1
+~~~
+
+Para ejecutar una aplicación en una sesión completa:
+
+~~~bash
+# Simula y muestra las acciones, sin aplicarlas.
+chxsec session start demo -- curl https://example.com
+
+# Aplica la configuración privilegiada y ejecuta el comando.
+chxsec session start --yes demo -- curl https://example.com
+~~~
+
+En estos comandos, escribe la aplicación después de <code>--</code>. Coloca las opciones como <code>--yes</code>, <code>--json</code> o <code>--subnet</code> antes del identificador de sesión.
+
+Las etapas manuales también admiten simulación. Añade <code>--yes</code> para aplicar los cambios privilegiados:
+
+~~~bash
+chxsec session network-apply demo --subnet 10.203.0.0/30
+chxsec session network-apply demo --subnet 10.203.0.0/30 --yes
+chxsec session firewall-apply demo --subnet 10.203.0.0/30 --yes
+chxsec session tor-port-apply demo --subnet 10.203.0.0/30 --yes
 chxsec session destroy demo
-```
+~~~
 
-En `session start`, escribe el comando después de `--`. Por cómo se capturan los argumentos restantes, coloca todas las opciones (`--subnet`, `--yes`, `--json`, etc.) antes del identificador de sesión.
+La herramienta solo retira recursos que reconoce como creados por la sesión. <code>session start</code> limpia al finalizar el comando o al recibir Ctrl-C. Para las etapas manuales, guarda el identificador y ejecuta <code>session destroy &lt;id&gt;</code> al terminar; todavía no existe un comando para listar todas esas sesiones. Consulta [RECOVERY.md](RECOVERY.md) si la limpieza falla.
 
-Aplicar una política MAC modifica el perfil de conexión seleccionado en NetworkManager. Añade `--reconnect` solo si estás preparado para que la conexión se interrumpa y vuelva a conectarse.
+## Modelo de seguridad y límites
 
-## Valores predeterminados de seguridad
+- No protege automáticamente todos los programas ni toda la conexión del equipo.
+- <code>run</code> y <code>shell</code> requieren aplicaciones compatibles con Tor por TCP. UDP, aplicaciones enlazadas estáticamente y configuraciones que evadan el proxy pueden quedar fuera de esa protección.
+- Para navegación anónima, usa Tor Browser. Un navegador normal no se vuelve anónimo solo por usar un proxy.
+- Las sesiones aisladas aplican un firewall de denegación por defecto: encaminan TCP y DNS a Tor y descartan el resto del tráfico, incluido IPv6.
+- La ejecución protegida falla si el listener SOCKS no está disponible; no continúa por una conexión directa.
+- Los comandos de planificación son simulaciones. Las acciones del sistema requieren una confirmación explícita mediante <code>--yes</code> cuando corresponda.
+- <code>session network-apply</code> crea el namespace, el enlace virtual y el resolver de DNS de la sesión; por sí solo no instala rutas ni firewall.
+- <code>session tor-port-apply</code> requiere la interfaz creada por <code>network-apply</code>, agrega configuración privada de Tor y recarga el servicio. En sistemas con SELinux puede registrar etiquetas de puertos que deben limpiarse mediante <code>session destroy</code>.
+- No borra registros del sistema, historiales ni rastros forenses.
+- <code>doctor</code> y <code>mac list</code> ocultan por defecto los identificadores locales; la verificación Tor oculta la IP pública. No se recopilan el usuario ni el hostname y no se guardan registros de ejecución por defecto.
 
-- No se guardan registros de ejecución por defecto.
-- No se recopilan el nombre de usuario ni el hostname.
-- No se guardan las IP públicas detectadas.
-- La verificación Tor oculta la IP salvo que se use expresamente `--reveal-ip`.
-- `mac list` oculta SSID y nombres de interfaces locales salvo que se use `--reveal-identifiers`.
-- Las comprobaciones directas de IP están desactivadas por defecto.
-- Los cambios de red del sistema son explícitos y usan las herramientas existentes.
+La herramienta puede reducir la exposición de la IP pública para procesos concretos; no garantiza anonimato. Huellas del navegador, cuentas, cookies, plugins, WebRTC, telemetría y comportamiento pueden revelar la identidad.
 
-Los comandos JSON devuelven código de salida `0` solo si todas las comprobaciones solicitadas pasan. Si falla la preparación o la verificación, devuelven `1`.
+## Actualización, fijado de versión y desinstalación
 
-## Garantías y límites de seguridad
+Los instaladores remotos apuntan actualmente a <code>dev</code>. Volver a ejecutar el instalador actualiza los archivos y puede sobrescribir la instalación anterior; no hay rollback automático. Conserva una copia si necesitas volver a tu versión previa.
 
-- La ejecución protegida se niega a iniciar si el listener SOCKS de Tor no está disponible; no cambia a una conexión directa.
-- La verificación Tor resuelve el hostname de comprobación por SOCKS y requiere que el endpoint confirme `IsTor`.
-- La protección se aplica a procesos TCP compatibles que se ejecutan explícitamente con la herramienta; no protege todo el equipo.
-- El proyecto no borra registros del sistema, auditorías ni historiales de terceros.
-- `session plan` solo muestra una simulación: no crea namespaces ni cambia reglas del firewall.
-- `session network-plan` solo prepara el plan. `session network-apply --yes` es el primer comando privilegiado: crea el namespace y un par veth con direcciones, sin instalar rutas ni reglas de firewall. También crea `/etc/netns/<namespace>/resolv.conf` apuntando al gateway Tor para que `ip netns exec` use el DNS de la sesión; `session destroy` elimina ese archivo si sigue administrado por la herramienta. Si falla, revierte los recursos creados. Sin `--yes`, solo muestra los comandos. `session destroy` elimina el namespace y el veth.
-- `session tor-port-plan` solo muestra las directivas privadas `TransPort` y `DNSPort`. `session tor-port-apply --yes` escribe una configuración por sesión en `/etc/tor/torrc.d`, la valida con `tor --verify-config`, recarga Tor (no lo reinicia) y confirma que escucha en la dirección de gateway de la sesión. Si algo falla, revierte los cambios. Requiere que la interfaz ya esté conectada mediante `network-apply`. En sistemas con SELinux enforcing, registra los puertos configurados como `tor_port_t` con `semanage port` antes de escribir el archivo; los desregistra con `session destroy`. Ejecuta siempre `session destroy`: una configuración sobrante puede impedir que Tor arranque después de reiniciar el equipo; `doctor` también la detecta. El `DNSPort` predeterminado es 5300 porque mDNS suele ocupar 5353.
-- `session firewall-plan` muestra las reglas nftables de denegación por defecto sin aplicarlas. `session firewall-apply --yes` las valida con `nft -c` y las instala de forma atómica en dos tablas limitadas a la interfaz veth de esa sesión. Se niega a ejecutarse dos veces y no modifica otras tablas ni interfaces. `session destroy` elimina las tablas, el namespace y el veth.
-- `session start --yes <id> -- <comando>` coordina la sesión: conecta el namespace, instala el firewall y el listener Tor en ese orden, desactiva IPv6 dentro del namespace y añade la única ruta de la sesión a través del gateway. Luego ejecuta el comando como el usuario que inició la herramienta, sin privilegios elevados. El firewall redirige el tráfico TCP y DNS de ese namespace a Tor y descarta los demás protocolos, incluido IPv6. La limpieza se ejecuta al terminar el comando, también con Ctrl-C; si falla una etapa de preparación, revierte lo que alcanzó a crear.
-- No publiques capturas ni registros de terminal que muestren SSID, usuarios, hostnames, rutas personales, IP o nombres de interfaces.
+Para fijar la descarga a una release o a un commit, define la referencia y el SHA-256 del archivo fuente antes de ejecutar el instalador:
 
-## Desarrollo
+~~~bash
+export CHXSEC_SOURCE_REF="<etiqueta vX.Y.Z o SHA completo de 40 caracteres>"
+export CHXSEC_SOURCE_ARCHIVE_SHA256="<SHA-256 del archivo .tar.gz>"
+bash install-chxsec-fedora.sh
+~~~
 
-```bash
+Sustituye los dos valores de ejemplo. Ambas variables son obligatorias para una referencia fijada. El instalador verifica el checksum antes de extraer el código. También acepta la URL del archivo en <code>CHXSEC_SOURCE_ARCHIVE_URL</code> y una ruta de instalación personalizada en <code>CHXSEC_INSTALL_DIR</code>.
+
+Antes de desinstalar, destruye las sesiones manuales que hayas creado y confirma la ruta de instalación. Para la ubicación predeterminada:
+
+~~~bash
+chxsec session destroy <id>
+rm -rf -- "$HOME/.local/share/chxchx-security"
+~~~
+
+Esto elimina los archivos de la herramienta, no Tor, NetworkManager ni los paquetes del sistema. Si usaste otra ubicación, sustituye la ruta por el directorio exacto. La configuración es opcional; no subas archivos <code>.env</code> al repositorio.
+
+## Desarrollo y validación
+
+~~~bash
 ./install-fedora.sh --yes --with-dev
 source .venv/bin/activate
 pytest
 python -m build --sdist --wheel
-```
+~~~
 
-Las pruebas de integración con Fedora y Tor están desactivadas por defecto porque requieren un servicio Tor en ejecución y acceso a Internet:
+La última suite local registrada (2 de noviembre de 2026) terminó con **133 pruebas pasadas y 7 omitidas**. Las pruebas opt-in de integración requieren Tor y conectividad. La prueba completa de namespaces modifica la red y el firewall: ejecútala únicamente en una VM Fedora desechable con snapshot:
 
-```bash
-make integration
-```
-
-La prueba completa del ciclo de namespaces cambia la red y las reglas del firewall. Ejecútala solo en una máquina virtual desechable con Fedora, nunca en el equipo de uso diario:
-
-```bash
+~~~bash
 make namespace-integration
-```
+~~~
+
+Siguen pendientes la validación privilegiada en esa VM, las instalaciones limpias del artefacto exacto en Fedora, Ubuntu y Kali, y la confirmación de CI en GitHub. Por eso esta Alpha no debe considerarse una release validada.
+
+## Licencia
+
+Distribuido bajo la licencia [MIT](LICENSE).
