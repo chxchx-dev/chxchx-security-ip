@@ -149,7 +149,13 @@ def test_session_tor_port_apply_without_yes_is_dry_run(capsys):
     assert "DNSPort 10.203.0.1:5300" in payload["config"]
 
 
-def test_session_start_without_yes_is_dry_run(capsys):
+def test_session_start_without_yes_is_dry_run(capsys, monkeypatch):
+    monkeypatch.setattr(
+        "chxchx_security.services.session_runtime.os.getuid", lambda: 1000
+    )
+    monkeypatch.setattr(
+        "chxchx_security.services.session_runtime.os.getgid", lambda: 1000
+    )
     assert cli.main(["session", "start", "--json", "demo", "--", "true"]) == 0
     payload = json.loads(capsys.readouterr().out)
 

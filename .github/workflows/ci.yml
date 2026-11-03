@@ -65,10 +65,10 @@ jobs:
       - name: Install runner dependencies
         run: |
           if command -v dnf >/dev/null 2>&1; then
-            dnf install -y git python3 python3-pip python3-pip-wheel tar curl
+            dnf install -y git python3 python3-pip tar curl iproute sudo util-linux
           else
             apt-get update
-            DEBIAN_FRONTEND=noninteractive apt-get install -y git python3 python3-venv python3-pip tar curl
+            DEBIAN_FRONTEND=noninteractive apt-get install -y git python3 python3-venv python3-pip tar curl iproute2 sudo util-linux
           fi
 
       - name: Check out repository

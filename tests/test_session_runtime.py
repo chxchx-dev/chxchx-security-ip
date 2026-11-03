@@ -55,7 +55,9 @@ def _patch_stages(monkeypatch, make, *, fail_network=False, fail_firewall=False,
     monkeypatch.setattr(module, "NamespaceRuntime", lambda **_k: make("namespace"))
 
 
-def test_dry_run_never_touches_the_system_and_lists_every_stage():
+def test_dry_run_never_touches_the_system_and_lists_every_stage(monkeypatch):
+    monkeypatch.setattr(module.os, "getuid", lambda: 1000)
+    monkeypatch.setattr(module.os, "getgid", lambda: 1000)
     runtime = SessionRuntime(runner=lambda c: pytest.fail("runner should not be called"))
 
     result = runtime.start("demo", ["curl", "https://example.com"], subnet=SUBNET, dry_run=True)
@@ -69,6 +71,8 @@ def test_dry_run_never_touches_the_system_and_lists_every_stage():
 
 
 def test_happy_path_applies_in_order_execs_and_always_cleans_up(monkeypatch, wiring):
+    monkeypatch.setattr(module.os, "getuid", lambda: 1000)
+    monkeypatch.setattr(module.os, "getgid", lambda: 1000)
     log, make = wiring
     _patch_stages(monkeypatch, make)
     calls = []

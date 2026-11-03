@@ -70,7 +70,8 @@ def test_runtime_destroy_is_deterministic(tmp_path, monkeypatch):
     calls = []
     runtime = NamespaceRuntime(
         runner=lambda command: calls.append(tuple(command))
-        or CmdResult(True, 0, "", "")
+        or CmdResult(True, 0, "", ""),
+        privileged_prefix=("sudo",),
     )
 
     result = runtime.destroy("demo")
