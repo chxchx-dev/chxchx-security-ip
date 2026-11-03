@@ -54,7 +54,7 @@ def test_live_network_apply_and_destroy():
         routes = run(["sudo", "ip", "netns", "exec", f"chxsec-{session_id}", "ip", "route"])
         assert "default" not in routes.stdout
     finally:
-        if result.network_ready:
+        if result.applied:
             destroyed = NamespaceRuntime().destroy(session_id)
             assert destroyed.ok is True, destroyed.detail
 
@@ -114,7 +114,7 @@ def test_live_tor_ports_apply_and_remove():
         if tor_result is not None and tor_result.applied:
             removed = tor.remove(session_id)
             assert removed.ok is True, removed.detail
-        if network.network_ready:
+        if network.applied:
             destroyed = NamespaceRuntime().destroy(session_id)
             assert destroyed.ok is True, destroyed.detail
     assert not os.path.exists(dropin_path(session_id))
@@ -129,45 +129,94 @@ def test_live_session_start_routes_disables_ipv6_and_drops_unredirected_traffic(
         sudo_check = run(["sudo", "-n", "true"], timeout=5)
         if not sudo_check.ok:
             pytest.skip("namespace test requires root or passwordless sudo")
-    if not exists("nc"):
-        pytest.skip("nc is required for this leak test")
+    if not exists("python3"):
+        pytest.skip("python3 is required for the network probes")
 
     session_id = f"it-start-{uuid.uuid4().hex[:8]}"
     filter_table, _ = table_names(session_id)
     probes: dict[str, str] = {}
 
     def executor(argv):
-        probe = run(list(argv), timeout=15)
+        probe = run(list(argv), timeout=45)
         probes["output"] = probe.stdout
-        counters = run(["sudo", "nft", "-a", "list", "table", "inet", filter_table], timeout=10)
-        probes["counters_before_leak_attempt"] = counters.stdout
+        counters = run(
+            ["sudo", "nft", "-a", "list", "table", "inet", filter_table],
+            timeout=10,
+        )
+        probes["counters_after_udp_attempt"] = counters.stdout
+        probes["counter_query_ok"] = "yes" if counters.ok else "no"
         return 0 if probe.ok else probe.returncode
 
+    forwarding = run(["sysctl", "-n", "net.ipv4.ip_forward"], timeout=5)
+    assert forwarding.ok, "could not read net.ipv4.ip_forward"
+    previous_forwarding = forwarding.stdout.strip()
+    assert previous_forwarding in {"0", "1"}, "unexpected ip_forward value"
+
+    if previous_forwarding == "0":
+        enabled = run(["sysctl", "-w", "net.ipv4.ip_forward=1"], timeout=5)
+        assert enabled.ok, "could not enable forwarding for the firewall counter probe"
+
     runtime = SessionRuntime(executor=executor)
-    result = runtime.start(
-        session_id,
-        [
-            "sh", "-c",
-            "echo ROUTE4:; ip route show; "
-            "echo IPV6FLAG:; cat /proc/sys/net/ipv6/conf/all/disable_ipv6; "
-            "echo ROUTE6:; ip -6 route show; echo END; "
-            "nc -u -w1 -z 198.51.100.7 12345 || true",
-        ],
-        subnet="10.203.12.0/30",
-        trans_port=19040,
-        dns_port=15300,
-    )
+    try:
+        result = runtime.start(
+            session_id,
+            [
+                "sh",
+                "-c",
+                "set -eu; "
+                "echo ROUTE4:; ip route show; "
+                "echo IPV6FLAG:; cat /proc/sys/net/ipv6/conf/all/disable_ipv6; "
+                "echo ROUTE6:; ip -6 route show; "
+                "echo DNSCONF:; cat /etc/resolv.conf; "
+                "echo TORCHECK:; "
+                "python3 -c 'import json,urllib.request; "
+                "opener=urllib.request.build_opener(urllib.request.ProxyHandler({})); "
+                "response=opener.open(\"https://check.torproject.org/api/ip\",timeout=30); "
+                "data=json.load(response); ok=data.get(\"IsTor\") is True; "
+                "print(\"TOR_OK\" if ok else \"TOR_NOT_CONFIRMED\"); "
+                "raise SystemExit(0 if ok else 1)'; "
+                "python3 -c 'import socket; "
+                "s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM); "
+                "s.sendto(b\"chxsec-leak-probe\",(\"198.51.100.7\",12345)); s.close()'",
+            ],
+            subnet="10.203.12.0/30",
+            trans_port=19040,
+            dns_port=15300,
+        )
+    finally:
+        if previous_forwarding == "0":
+            restored = run(
+                ["sysctl", "-w", "net.ipv4.ip_forward=0"],
+                timeout=5,
+            )
+            assert restored.ok, "could not restore net.ipv4.ip_forward"
 
     assert result.ok is True, result.detail
     output = probes["output"]
     route4 = output.split("ROUTE4:\n", 1)[1].split("IPV6FLAG:", 1)[0]
     ipv6_flag = output.split("IPV6FLAG:\n", 1)[1].split("ROUTE6:", 1)[0].strip()
-    route6 = output.split("ROUTE6:\n", 1)[1].split("END", 1)[0].strip()
-
+    route6 = output.split("ROUTE6:\n", 1)[1].split("DNSCONF:", 1)[0].strip()
+    dns_config = output.split("DNSCONF:\n", 1)[1].split("TORCHECK:", 1)[0]
     assert "default via 10.203.12.1" in route4
     assert ipv6_flag == "1"
     assert route6 == ""
-    assert 'oifname "chxh-' in probes["counters_before_leak_attempt"]
+    assert "nameserver 10.203.12.1" in dns_config
+    assert "TOR_OK" in output
+    assert probes["counter_query_ok"] == "yes"
+
+    dropped_rules = [
+        line
+        for line in probes["counters_after_udp_attempt"].splitlines()
+        if 'iifname "chxh-' in line and " counter packets " in line and " drop" in line
+    ]
+    assert dropped_rules, "nftables did not report the session's forward-drop counter"
+    packet_count = int(dropped_rules[0].split("packets", 1)[1].split()[0])
+    assert packet_count > 0, "the unredirected UDP probe did not hit the nftables drop rule"
 
     namespaces = run(["sudo", "ip", "netns", "list"], timeout=5).stdout
     assert f"chxsec-{session_id}" not in namespaces
+    assert not os.path.exists(f"/etc/netns/chxsec-{session_id}/resolv.conf")
+    filter_after = run(
+        ["sudo", "nft", "list", "table", "inet", filter_table], timeout=5
+    )
+    assert not filter_after.ok, "session nftables filter table was left behind"

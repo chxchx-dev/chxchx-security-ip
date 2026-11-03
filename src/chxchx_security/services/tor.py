@@ -49,6 +49,11 @@ def start_service() -> CmdResult:
         return CmdResult(False, 127, "", "systemctl not found")
     return run(["sudo", "systemctl", "start", "tor.service"], timeout=30)
 
+def stop_service() -> CmdResult:
+    if not exists("systemctl"):
+        return CmdResult(False, 127, "", "systemctl not found")
+    return run(["sudo", "systemctl", "stop", "tor.service"], timeout=30)
+
 
 def verify(settings: Settings, *, reveal_ip: bool = False) -> TorVerification:
     if not exists("curl"):

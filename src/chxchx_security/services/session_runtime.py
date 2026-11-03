@@ -182,11 +182,19 @@ class SessionRuntime:
 
         exec_cmd = self._exec_command(plan.namespace, command)
         executed.append(exec_cmd)
+        exit_code: int | None = None
+        launch_error: OSError | None = None
         try:
             exit_code = self._executor(exec_cmd)
+        except OSError as error:
+            launch_error = error
         finally:
             cleanup_detail = self._cleanup(session_id)
 
+        if launch_error is not None:
+            detail = f"command launch failed: {launch_error}; {cleanup_detail}"
+            return SessionStartResult(False, session_id, None, detail, tuple(executed))
+        assert exit_code is not None
         detail = f"command exited {exit_code}; {cleanup_detail}"
         return SessionStartResult(
             exit_code == 0 and cleanup_detail == "session cleaned up",

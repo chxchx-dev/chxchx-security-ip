@@ -172,6 +172,11 @@ def build_network_plan(
             "planned",
         ),
         NetworkStep(
+            "configure per-namespace DNS to use the Tor gateway",
+            None,
+            "configured_by_network_runtime",
+        ),
+        NetworkStep(
             "route namespace traffic through Tor",
             None,
             "blocked_until_tor_ports",
@@ -198,6 +203,6 @@ def build_network_plan(
         trans_port=trans_port,
         dns_port=dns_port,
         executable=False,
-        reason="Tor TransPort/DNSPort wiring and fail-closed nftables are not implemented",
+        reason="network apply wires the veth; session start adds Tor, firewall and the default route",
         steps=steps,
     )

@@ -33,7 +33,14 @@ def test_audit_alias_supports_json(monkeypatch, capsys):
 
 
 def test_interactive_doctor_returns_failure_status(monkeypatch):
-    monkeypatch.setattr(cli.Prompt, "ask", lambda *_args, **_kwargs: "1")
+    answers = iter(["1", "", "0"])
+    monkeypatch.setattr(cli.Prompt, "ask", lambda *_args, **_kwargs: next(answers))
+
+    class TTYInput:
+        def isatty(self):
+            return True
+
+    monkeypatch.setattr(cli.sys, "stdin", TTYInput())
     monkeypatch.setattr(cli, "doctor", lambda _settings: [Check("Tor", False, "down")])
 
     assert cli.main([]) == 1
@@ -142,7 +149,13 @@ def test_session_tor_port_apply_without_yes_is_dry_run(capsys):
     assert "DNSPort 10.203.0.1:5300" in payload["config"]
 
 
-def test_session_start_without_yes_is_dry_run(capsys):
+def test_session_start_without_yes_is_dry_run(capsys, monkeypatch):
+    monkeypatch.setattr(
+        "chxchx_security.services.session_runtime.os.getuid", lambda: 1000
+    )
+    monkeypatch.setattr(
+        "chxchx_security.services.session_runtime.os.getgid", lambda: 1000
+    )
     assert cli.main(["session", "start", "--json", "demo", "--", "true"]) == 0
     payload = json.loads(capsys.readouterr().out)
 
@@ -153,3 +166,86 @@ def test_session_start_without_yes_is_dry_run(capsys):
 def test_session_start_requires_a_command(capsys):
     with pytest.raises(SystemExit):
         cli.main(["session", "start", "demo"])
+
+
+def test_interactive_command_guide_returns_to_menu(monkeypatch, capsys):
+    answers = iter(["9", "", "0"])
+    monkeypatch.setattr(cli.Prompt, "ask", lambda *_args, **_kwargs: next(answers))
+
+    class TTYInput:
+        def isatty(self):
+            return True
+
+    monkeypatch.setattr(cli.sys, "stdin", TTYInput())
+
+    assert cli.main([]) == 0
+
+    output = capsys.readouterr().out
+    assert "Guía rápida de comandos" in output
+    assert "chxsec run -- curl https://example.com" in output
+    assert "chxsec session start --yes demo -- curl https://example.com" in output
+    assert output.count("¿Qué quieres hacer?") == 2
+
+def test_interactive_run_splits_command_into_arguments(monkeypatch):
+    answers = iter(["8", "curl 'https://example.com/path with space'", "", "0"])
+    monkeypatch.setattr(cli.Prompt, "ask", lambda *_args, **_kwargs: next(answers))
+
+    class TTYInput:
+        def isatty(self):
+            return True
+
+    monkeypatch.setattr(cli.sys, "stdin", TTYInput())
+    executed = []
+    monkeypatch.setattr(
+        cli,
+        "run_protected",
+        lambda _settings, command: executed.append(command) or 0,
+    )
+
+    assert cli.main([]) == 0
+    assert executed == [["curl", "https://example.com/path with space"]]
+
+
+def test_non_interactive_start_prints_help(monkeypatch, capsys):
+    class PipedInput:
+        def isatty(self):
+            return False
+
+    monkeypatch.setattr(cli.sys, "stdin", PipedInput())
+
+    assert cli.main([]) == 0
+    assert "usage: chxsec" in capsys.readouterr().out
+
+def test_tor_stop_command_stops_the_service(monkeypatch):
+    class Result:
+        ok = True
+        stdout = ""
+        stderr = ""
+
+    stopped = []
+    monkeypatch.setattr(cli, "stop_service", lambda: stopped.append(True) or Result())
+
+    assert cli.main(["tor", "stop"]) == 0
+    assert stopped == [True]
+
+
+def test_menu_stop_requires_confirmation(monkeypatch):
+    answers = iter(["3", "", "0"])
+    monkeypatch.setattr(cli.Prompt, "ask", lambda *_args, **_kwargs: next(answers))
+
+    class TTYInput:
+        def isatty(self):
+            return True
+
+    class Result:
+        ok = True
+        stdout = ""
+        stderr = ""
+
+    monkeypatch.setattr(cli.sys, "stdin", TTYInput())
+    monkeypatch.setattr(cli.Confirm, "ask", lambda *_args, **_kwargs: True)
+    stopped = []
+    monkeypatch.setattr(cli, "stop_service", lambda: stopped.append(True) or Result())
+
+    assert cli.main([]) == 0
+    assert stopped == [True]

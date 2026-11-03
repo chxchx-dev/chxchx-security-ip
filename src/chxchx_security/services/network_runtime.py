@@ -75,14 +75,20 @@ class NetworkRuntime:
             session_id, subnet=subnet, trans_port=trans_port, dns_port=dns_port
         )
         commands = self._commands(plan)
+        host_ip = plan.host_address.split("/", 1)[0]
         if dry_run:
+            resolver = self._namespaces.configure_resolver(
+                session_id, host_ip, dry_run=True
+            )
             return NetworkApplyResult(
                 True,
                 session_id,
                 plan.namespace,
                 False,
                 "dry-run; nothing was changed",
-                self._namespaces.create(session_id, dry_run=True).commands + commands,
+                self._namespaces.create(session_id, dry_run=True).commands
+                + commands
+                + resolver.commands,
             )
 
         created = self._namespaces.create(session_id)
@@ -109,11 +115,25 @@ class NetworkRuntime:
             if index == 0:
                 veth_created = True
 
+        resolver = self._namespaces.configure_resolver(session_id, host_ip)
+        executed.extend(resolver.commands)
+        if not resolver.ok:
+            rolled_back = self._rollback(plan, remove_veth=veth_created)
+            state = "rollback completed" if rolled_back else "rollback FAILED; clean up manually"
+            return NetworkApplyResult(
+                False,
+                session_id,
+                plan.namespace,
+                False,
+                f"namespace DNS setup failed: {resolver.detail}; {state}",
+                tuple(executed),
+            )
+
         return NetworkApplyResult(
             True,
             session_id,
             plan.namespace,
             True,
-            "veth wired; no route to the outside is installed",
+            "veth wired; namespace DNS points to the Tor gateway; no outside route is installed",
             tuple(executed),
         )
