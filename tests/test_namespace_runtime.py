@@ -57,7 +57,7 @@ def test_runtime_rolls_back_when_loopback_setup_fails():
             return CmdResult(False, 1, "", "loopback failed")
         return CmdResult(True, 0, "", "")
 
-    runtime = NamespaceRuntime(runner=runner)
+    runtime = NamespaceRuntime(runner=runner, privileged_prefix=("sudo",))
     result = runtime.create("demo")
 
     assert result.ok is False
