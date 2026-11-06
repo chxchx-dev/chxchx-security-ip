@@ -56,8 +56,14 @@ chxsec() {
 
 echo "Checking sudo access and global mode baseline..."
 sudo -v
-if chxsec global status --json | "$python" -c \
-    'import json,sys; raise SystemExit(0 if json.load(sys.stdin).get("active") else 1)'; then
+baseline_status="$(chxsec global status --json 2>/dev/null || true)"
+if ! printf '%s\n' "$baseline_status" | "$python" -c \
+    'import json,sys; value=json.load(sys.stdin).get("active"); raise SystemExit(0 if isinstance(value, bool) else 1)'; then
+  echo "Could not determine the current global mode state; refusing to continue." >&2
+  exit 1
+fi
+if printf '%s\n' "$baseline_status" | "$python" -c \
+    'import json,sys; raise SystemExit(0 if json.load(sys.stdin)["active"] else 1)'; then
   echo "Refusing: global Tor mode is already active; stop it or restore snapshot." >&2
   exit 2
 fi
@@ -104,10 +110,9 @@ fi
 echo "Stopping global mode and checking cleanup..."
 chxsec global stop
 applied=0
-if chxsec global status --json | "$python" -c \
-    'import json,sys; raise SystemExit(0 if not json.load(sys.stdin).get("active") else 1)'; then
-  :
-else
+stopped_status="$(chxsec global status --json 2>/dev/null || true)"
+if ! printf '%s\n' "$stopped_status" | "$python" -c \
+    'import json,sys; raise SystemExit(0 if json.load(sys.stdin).get("active") is False else 1)'; then
   echo "FAIL: global mode still reports active after stop." >&2
   exit 1
 fi
