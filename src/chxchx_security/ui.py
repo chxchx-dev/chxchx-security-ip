@@ -65,10 +65,16 @@ def prompt_interactive_menu() -> str:
     console.print("[bold cyan]7[/] Ver perfiles activos de NetworkManager.")
     console.print("[bold cyan]8[/] Ejecutar un programa a través de Tor.")
     console.print("[bold cyan]9[/] Ver la guía de comandos y sesiones avanzadas.")
+    console.print("[bold cyan]10[/] Activar modo global — todo el equipo por Tor.")
+    console.print("[bold cyan]11[/] Cambiar IP de salida — nueva identidad de Tor.")
+    console.print("[bold cyan]12[/] Desactivar el modo global.")
+    console.print("[bold cyan]13[/] Ver el estado del modo global.")
     console.print("[bold cyan]0[/] Salir.")
     return Prompt.ask(
         "Selecciona una opción",
-        choices=["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"],
+        choices=[
+            "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13"
+        ],
         default="1",
     )
 
@@ -87,6 +93,12 @@ def show_command_guide() -> None:
     console.print("[cyan]chxsec tor stop[/] — detenerlo también para las otras aplicaciones.")
     console.print("  El servicio sigue activo al cerrar el menú; detenerlo requiere una acción explícita.")
     console.print("[cyan]chxsec tor verify[/] — comprobar que la conexión sale por Tor.")
+    console.print("[cyan]chxsec tor new-identity[/] — pedir un circuito nuevo y cambiar la IP de salida.")
+    console.print("  Si el puerto de control no está disponible, usa --restart como alternativa.")
+    console.print("[cyan]chxsec global plan[/] — revisar el modo global sin aplicar cambios.")
+    console.print("[cyan]chxsec global start --yes[/] — enrutar todo el host por Tor (requiere sudo).")
+    console.print("[cyan]chxsec global stop[/] — desactivar el modo global y volver a la conexión directa.")
+    console.print("[cyan]chxsec global status[/] — ver si el modo global está activo.")
     console.print(
         "[cyan]chxsec run -- <programa> [argumentos][/] — "
         "ejecutar un programa compatible por Tor."
@@ -109,7 +121,8 @@ def show_command_guide() -> None:
     console.print("  Conserva el ID; [cyan]chxsec session destroy demo[/] limpia sus recursos.")
     console.print()
     console.print(
-        "La protección cubre solo los procesos que ejecutas con ChxChx; "
-        "no convierte todo el equipo en anónimo."
+        "La protección por proceso cubre solo los programas que ejecutas con ChxChx. "
+        "El modo global sí enruta todo el host, pero descarta UDP, ICMP e IPv6 "
+        "y no garantiza anonimato."
     )
     console.print("Para navegar de forma anónima, usa Tor Browser.")

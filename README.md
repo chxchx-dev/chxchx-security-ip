@@ -1,6 +1,6 @@
 <div align="center">
   <h1>ChxChx Security</h1>
-  <p><strong>Privacidad de red por proceso para Linux.</strong><br>Usa Tor donde tú lo decides, con comandos claros y sesiones aisladas cuando las necesitas.</p>
+  <p><strong>Privacidad de red por proceso y modo global opcional para Linux.</strong><br>Usa Tor donde tú lo decides o enruta todo el equipo de forma explícita y con fallo cerrado.</p>
   <p>
     <a href="https://github.com/chxchx-dev/chxchx-security-ip/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/chxchx-dev/chxchx-security-ip/ci.yml?branch=main&amp;label=CI" alt="CI"></a>
     <img src="https://img.shields.io/badge/estado-Alpha-orange" alt="Estado Alpha">
@@ -23,7 +23,7 @@
 
 Una herramienta de terminal para Fedora, Ubuntu y Kali Linux. Coordina Tor, <code>torsocks</code>, NetworkManager, namespaces y <code>nftables</code> para que puedas elegir qué aplicación ejecutas por una ruta protegida.
 
-**No crea un túnel global:** iniciar Tor no cambia la conexión de todo el equipo. Se protegen los programas que lanzas expresamente mediante <code>chxsec run</code>, <code>chxsec shell</code> o una sesión aislada.
+**Por defecto no crea un túnel global:** iniciar Tor no cambia la conexión de todo el equipo. Se protegen los programas que lanzas expresamente mediante <code>chxsec run</code>, <code>chxsec shell</code> o una sesión aislada. El **modo global** es una acción explícita que redirige todo el tráfico del host por Tor con un kill switch de <code>nftables</code>.
 
 ## Cómo funciona
 
@@ -36,6 +36,9 @@ flowchart LR
     NS --> FW[Firewall nftables]
     FW --> PORTS[TransPort y DNSPort de Tor]
     FW -. Otro tráfico .-> DROP[Descartado]
+    CLI -->|global start| GNAT[nftables NAT del host]
+    GNAT --> PORTS
+    GNAT -. UDP, ICMP e IPv6 .-> DROP
 ```
 
 ## Instalación
@@ -94,6 +97,10 @@ Ejecuta <code>chxsec</code> desde una terminal. El menú te permite volver despu
 | 7 | Ver perfiles de NetworkManager |
 | 8 | Ejecutar un comando protegido |
 | 9 | Abrir la guía de comandos |
+| 10 | Activar el modo global (todo el host por Tor) |
+| 11 | Cambiar la IP de salida con una nueva identidad de Tor |
+| 12 | Desactivar el modo global |
+| 13 | Consultar el estado del modo global |
 | 0 | Salir |
 
 Sin una terminal interactiva, <code>chxsec</code> muestra la ayuda de la CLI.
@@ -111,6 +118,52 @@ chxsec tor stop
 
 > [!NOTE]
 > Tor permanece activo al salir del menú porque es un servicio compartido del sistema. <code>chxsec tor stop</code> también desconecta las otras aplicaciones que estén usando Tor.
+
+### Cambiar la IP de salida
+
+~~~bash
+chxsec tor new-identity
+chxsec tor new-identity --restart
+~~~
+
+<code>new-identity</code> pide un circuito nuevo por la interfaz de control de Tor y comprueba si cambió la IP de salida. Si el puerto o socket de control no está disponible, <code>--restart</code> reinicia <code>tor.service</code> como alternativa. Las IP se ocultan por defecto; añade <code>--reveal-ip</code> si quieres verlas. Una identidad nueva no garantiza una IP distinta: Tor puede reutilizar el mismo nodo de salida.
+
+El cliente busca la interfaz de control en <code>/run/tor/control</code> y, si no existe, en <code>127.0.0.1:9051</code>. Puedes ajustarlo con <code>CHXSEC_TOR_CONTROL_SOCKET</code>, <code>CHXSEC_TOR_CONTROL_HOST</code>, <code>CHXSEC_TOR_CONTROL_PORT</code> y <code>CHXSEC_TOR_CONTROL_COOKIE</code>; la contraseña, si la usas, se lee de <code>CHXSEC_TOR_CONTROL_PASSWORD</code> y nunca se escribe en logs. En Fedora, el usuario debe pertenecer al grupo <code>toranon</code> para leer la cookie; en Debian/Kali, a <code>debian-tor</code>.
+
+<code>chxsec run</code>, <code>chxsec shell</code> y el modo global arrancan Tor automáticamente si está parado. Para impedirlo, define <code>CHXSEC_AUTO_START_TOR=0</code>.
+
+### Modo global: todo el host por Tor
+
+> [!CAUTION]
+> El modo global redirige **todo** el tráfico del equipo, no solo el de <code>chxsec</code>. Requiere <code>sudo</code>, <code>nftables</code> y que Tor se ejecute como un usuario distinto de root. Actívalo solo en un equipo que controles y, preferiblemente, en una VM desechable con snapshot.
+
+~~~bash
+# Revisar el plan y las reglas sin cambiar nada.
+chxsec global plan
+
+# Aplicar; el comando pide sudo y arranca Tor si está parado.
+chxsec global start --yes
+
+# Alternativa para conservar el acceso a la LAN (por ejemplo, impresoras o NAS).
+chxsec global start --yes --allow-lan
+
+# Consultar y desactivar.
+chxsec global status
+chxsec global stop
+~~~
+
+El modo global es **fail-closed**:
+
+- Todo el TCP del host se redirige al <code>TransPort</code> de Tor y el DNS UDP/53 a su <code>DNSPort</code>.
+- UDP que no sea DNS, ICMP e IPv6 se descartan. Tor no transporta UDP ni ICMP.
+- Solo el tráfico local, el propio proceso de Tor y DHCP quedan exentos. La LAN se bloquea salvo que uses <code>--allow-lan</code>.
+- Si no se puede determinar el UID de Tor o Tor corre como root, el modo global se niega a aplicarse para evitar un bucle de redirección.
+- Si falla la validación de <code>nftables</code>, la recarga de Tor o el estado, se intenta revertir lo aplicado.
+
+El plan se puede revisar antes de ejecutar; <code>global start</code> sin <code>--yes</code> solo simula. Los cambios se aplican en el host y no sobreviven a un reinicio: vuelve a ejecutar <code>chxsec global start --yes</code> después de arrancar. La configuración de Tor vive en <code>/etc/tor/torrc.d/chxsec-global.conf</code> y el estado en <code>/run/chxsec/global.json</code>; <code>chxsec global stop</code> los retira junto con las tablas <code>nftables</code>. Las tablas se llaman <code>chxsec_global_nat</code> y <code>chxsec_global_filter</code>.
+
+> [!WARNING]
+> Mientras el modo global esté activo, las actualizaciones, videollamadas, juegos y otras aplicaciones que dependen de UDP o ICMP dejarán de funcionar. Si prefieres proteger solo ciertos procesos, usa <code>chxsec run</code>, <code>chxsec shell</code> o una sesión aislada en lugar del modo global.
 
 ### Cambiar la política MAC
 
@@ -130,6 +183,11 @@ Aplicar una política cambia el perfil seleccionado en NetworkManager. Añade <c
 | Consultar el servicio Tor | <code>chxsec tor status</code> |
 | Iniciar o detener Tor | <code>chxsec tor start</code> · <code>chxsec tor stop</code> |
 | Comprobar la ruta Tor | <code>chxsec tor verify</code> |
+| Cambiar la IP de salida | <code>chxsec tor new-identity</code> |
+| Revisar el modo global sin cambios | <code>chxsec global plan</code> |
+| Enrutar todo el host por Tor | <code>chxsec global start --yes</code> |
+| Desactivar el modo global | <code>chxsec global stop</code> |
+| Consultar el modo global | <code>chxsec global status</code> |
 | Ejecutar una aplicación compatible | <code>chxsec run -- &lt;comando&gt;</code> |
 | Abrir una shell temporal protegida | <code>chxsec shell</code> |
 | Consultar perfiles de red | <code>chxsec mac list</code> |
@@ -162,7 +220,8 @@ La sesión completa elimina sus recursos cuando el comando termina, también al 
 
 | ChxChx Security hace | No hace |
 | --- | --- |
-| Ejecuta mediante Tor procesos compatibles que eliges explícitamente. | No enruta automáticamente todo el equipo. |
+| Ejecuta mediante Tor procesos compatibles que eliges explícitamente. | No activa el modo global por su cuenta: requiere <code>global start --yes</code>. |
+| Con el modo global, redirige todo el host y descarta UDP, ICMP e IPv6 por defecto. | No transporta UDP ni ICMP por Tor; esas aplicaciones dejan de funcionar en modo global. |
 | Falla si no encuentra el listener SOCKS; no usa una conexión directa como alternativa. | No garantiza anonimato ni elimina rastros del sistema. |
 | En sesiones aisladas, bloquea protocolos fuera de las reglas de Tor. | <code>run</code> no protege UDP ni aplicaciones que evadan <code>torsocks</code>. |
 | Oculta identificadores locales e IP pública en las salidas predeterminadas. | No oculta huellas del navegador, cuentas, cookies, WebRTC o telemetría. |

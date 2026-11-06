@@ -3,8 +3,11 @@ import json
 
 from chxchx_security import cli
 from chxchx_security.services.audit import Check
+from chxchx_security.services.global_plan import build_global_plan
+from chxchx_security.services.global_runtime import GlobalResult, GlobalStatus
 from chxchx_security.services.network import ConnectionInfo
-from chxchx_security.services.tor import TorVerification
+from chxchx_security.services.tor import RotationResult, TorVerification
+from chxchx_security.utils.process import CmdResult
 
 
 def test_doctor_json_output(monkeypatch, capsys):
@@ -249,3 +252,118 @@ def test_menu_stop_requires_confirmation(monkeypatch):
 
     assert cli.main([]) == 0
     assert stopped == [True]
+
+
+def _fake_global_runtime(monkeypatch, *, plan=None, start=None, stop=None, status=None):
+    calls = {}
+
+    class FakeRuntime:
+        def plan(self, **kwargs):
+            calls["plan"] = kwargs
+            return plan
+
+        def start(self, **kwargs):
+            calls["start"] = kwargs
+            return start
+
+        def stop(self):
+            calls["stop"] = True
+            return stop
+
+        def status(self):
+            calls["status"] = True
+            return status
+
+    monkeypatch.setattr(cli, "GlobalRuntime", FakeRuntime)
+    return calls
+
+
+def test_global_plan_json_is_non_executing(monkeypatch, capsys):
+    plan = build_global_plan(tor_uid=967)
+    _fake_global_runtime(monkeypatch, plan=plan)
+
+    assert cli.main(["global", "plan", "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["tor_uid"] == 967
+    assert payload["executable"] is False
+    assert "meta l4proto tcp redirect to :9040" in payload["ruleset"]
+
+
+def test_global_start_without_yes_is_a_dry_run(monkeypatch, capsys):
+    plan = build_global_plan(tor_uid=967)
+    result = GlobalResult(
+        True, False, "dry-run; nothing was changed", (("nft", "-c", "-f"),), plan
+    )
+    calls = _fake_global_runtime(monkeypatch, plan=plan, start=result)
+
+    assert cli.main(["global", "start"]) == 0
+    output = capsys.readouterr().out
+
+    assert calls["start"]["dry_run"] is True
+    assert "Re-run with --yes" in output
+
+
+def test_global_start_with_yes_ensures_tor_and_applies(monkeypatch, capsys):
+    plan = build_global_plan(tor_uid=967)
+    result = GlobalResult(True, True, "whole-host Tor mode is active", (), plan)
+    calls = _fake_global_runtime(monkeypatch, plan=plan, start=result)
+    ensured = []
+    monkeypatch.setattr(
+        cli,
+        "ensure_service",
+        lambda _settings: ensured.append(True) or CmdResult(True, 0, "active", ""),
+    )
+
+    assert cli.main(["global", "start", "--yes", "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+
+    assert ensured == [True]
+    assert calls["start"]["dry_run"] is False
+    assert payload["applied"] is True
+
+
+def test_global_stop_reports_failure(monkeypatch, capsys):
+    _fake_global_runtime(
+        monkeypatch,
+        stop=GlobalResult(False, False, "could not remove the global nftables tables"),
+    )
+
+    assert cli.main(["global", "stop", "--json"]) == 1
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["ok"] is False
+    assert "could not remove" in payload["detail"]
+
+
+def test_global_status_uses_the_active_flag_for_the_exit_code(monkeypatch, capsys):
+    _fake_global_runtime(
+        monkeypatch,
+        status=GlobalStatus(False, "inactive", "whole-host Tor mode is inactive"),
+    )
+
+    assert cli.main(["global", "status", "--json"]) == 1
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["state"] == "inactive"
+
+
+def test_tor_new_identity_masks_ip_addresses(monkeypatch, capsys):
+    monkeypatch.setattr(
+        cli,
+        "rotate_identity",
+        lambda _settings, restart=False: RotationResult(
+            True,
+            True,
+            "203.0.113.42",
+            "198.51.100.20",
+            "Tor circuit rotated; the exit IP changed",
+        ),
+    )
+
+    assert cli.main(["tor", "new-identity", "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["previous_ip"] == "203.0.x.x"
+    assert payload["current_ip"] == "198.51.x.x"
+    assert payload["changed"] is True

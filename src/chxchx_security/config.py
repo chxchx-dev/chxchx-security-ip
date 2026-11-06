@@ -77,6 +77,11 @@ class Settings:
     allow_direct_network_tests: bool
     enable_runtime_logs: bool
     log_level: str
+    auto_start_tor: bool = True
+    tor_control_host: str = "127.0.0.1"
+    tor_control_port: int = 9051
+    tor_control_socket: str = "/run/tor/control"
+    tor_control_cookie: str = ""
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -107,4 +112,17 @@ class Settings:
                 os.getenv("CHXSEC_ENABLE_RUNTIME_LOGS"), False
             ),
             log_level=os.getenv("CHXSEC_LOG_LEVEL", "WARNING").upper(),
+            auto_start_tor=_parse_bool(os.getenv("CHXSEC_AUTO_START_TOR"), True),
+            tor_control_host=os.getenv("CHXSEC_TOR_CONTROL_HOST", "127.0.0.1"),
+            tor_control_port=_parse_int(
+                os.getenv("CHXSEC_TOR_CONTROL_PORT"),
+                "CHXSEC_TOR_CONTROL_PORT",
+                default=9051,
+                minimum=1,
+                maximum=65535,
+            ),
+            tor_control_socket=os.getenv(
+                "CHXSEC_TOR_CONTROL_SOCKET", "/run/tor/control"
+            ),
+            tor_control_cookie=os.getenv("CHXSEC_TOR_CONTROL_COOKIE", ""),
         )

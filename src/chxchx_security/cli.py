@@ -10,6 +10,7 @@ from rich.prompt import Confirm, Prompt
 from chxchx_security import __version__
 from chxchx_security.config import ConfigurationError, Settings
 from chxchx_security.services.audit import doctor
+from chxchx_security.services.global_runtime import GlobalRuntime
 from chxchx_security.services.network import (
     ALLOWED_MAC_MODES,
     active_connections,
@@ -30,7 +31,9 @@ from chxchx_security.services.session_runtime import SessionRuntime
 from chxchx_security.services.tor_ports import build_tor_port_plan
 from chxchx_security.services.tor_runtime import TorPortRuntime
 from chxchx_security.services.tor import (
+    ensure_service,
     protected_shell,
+    rotate_identity,
     run_protected,
     service_state,
     socks_reachable,
@@ -38,6 +41,7 @@ from chxchx_security.services.tor import (
     stop_service,
     verify,
 )
+from chxchx_security.utils.redact import mask_ip
 from chxchx_security.ui import (
     checks_table,
     console,
@@ -66,6 +70,22 @@ def build_parser() -> argparse.ArgumentParser:
     verify_p = tor_sub.add_parser("verify")
     verify_p.add_argument("--reveal-ip", action="store_true")
     verify_p.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
+    rotate_p = tor_sub.add_parser(
+        "new-identity",
+        aliases=["rotate"],
+        help="Request a new Tor circuit and report whether the exit IP changed",
+    )
+    rotate_p.add_argument(
+        "--restart",
+        action="store_true",
+        help="Restart tor.service instead of using the Tor control interface",
+    )
+    rotate_p.add_argument(
+        "--reveal-ip",
+        action="store_true",
+        help="Show the previous and current exit IPs",
+    )
+    rotate_p.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
 
     run_p = sub.add_parser("run", help="Run a compatible command through torsocks")
     run_p.add_argument("argv", nargs=argparse.REMAINDER)
@@ -154,6 +174,36 @@ def build_parser() -> argparse.ArgumentParser:
     firewall_plan.add_argument("--dns-port", type=int, default=5300)
     firewall_plan.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
 
+    global_p = sub.add_parser(
+        "global",
+        help="Route the whole host through Tor with a fail-closed kill switch (privileged)",
+    )
+    global_sub = global_p.add_subparsers(dest="global_command", required=True)
+    global_plan = global_sub.add_parser(
+        "plan", help="Show the non-executing whole-host ruleset and Tor config"
+    )
+    global_plan.add_argument("--trans-port", type=int, default=9040)
+    global_plan.add_argument("--dns-port", type=int, default=5300)
+    global_plan.add_argument("--allow-lan", action="store_true")
+    global_plan.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
+    global_start = global_sub.add_parser(
+        "start",
+        help="Install the whole-host Tor kill switch (privileged; needs --yes)",
+    )
+    global_start.add_argument("--trans-port", type=int, default=9040)
+    global_start.add_argument("--dns-port", type=int, default=5300)
+    global_start.add_argument("--allow-lan", action="store_true")
+    global_start.add_argument(
+        "--yes", action="store_true", help="Actually change Tor and nftables"
+    )
+    global_start.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
+    global_stop = global_sub.add_parser(
+        "stop", help="Remove the whole-host Tor kill switch (privileged)"
+    )
+    global_stop.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
+    global_status = global_sub.add_parser("status", help="Show whole-host Tor mode status")
+    global_status.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
+
     mac = sub.add_parser("mac", help="NetworkManager MAC privacy")
     mac_sub = mac.add_subparsers(dest="mac_command", required=True)
     mac_list = mac_sub.add_parser("list")
@@ -207,6 +257,7 @@ def _interactive(settings: Settings) -> int:
     header(__version__)
     console.print("Bienvenido. Elige una opción; puedes volver aquí después de cada acción.")
     console.print("Tor seguirá activo al salir del menú hasta que elijas detenerlo.")
+    global_runtime = GlobalRuntime()
     last_status = 0
 
     while True:
@@ -297,6 +348,62 @@ def _interactive(settings: Settings) -> int:
                         console.print(f"El comando terminó con código {last_status}.")
             elif choice == "9":
                 show_command_guide()
+            elif choice == "10":
+                console.print(
+                    "[yellow]Modo global: todo el tráfico del host saldrá por Tor. "
+                    "UDP, ICMP e IPv6 quedarán bloqueados. La LAN también se bloquea "
+                    "salvo que uses `chxsec global start --allow-lan`.[/]"
+                )
+                if Confirm.ask(
+                    "Esto modificará nftables y Tor y requiere sudo. ¿Continuar?",
+                    default=False,
+                ):
+                    service = ensure_service(settings)
+                    if not service.ok:
+                        console.print(
+                            f"[red]{service.stderr or service.stdout or 'Tor is not available'}[/]"
+                        )
+                        last_status = 1
+                    else:
+                        result = global_runtime.start(dry_run=False)
+                        console.print(f"Estado: {result.detail}")
+                        last_status = 0 if result.ok else 1
+                else:
+                    console.print("No se activó el modo global.")
+                    last_status = 0
+            elif choice == "11":
+                console.print(
+                    "[yellow]Cambiar de identidad no borra cookies, cuentas ni huellas. "
+                    "Tor puede reutilizar la misma salida.[/]"
+                )
+                if Confirm.ask(
+                    "¿Pedir una nueva identidad a Tor ahora?", default=False
+                ):
+                    result = rotate_identity(settings)
+                    console.print(result.detail)
+                    if result.ok:
+                        previous = mask_ip(result.previous_ip) if result.previous_ip else "no disponible"
+                        current = mask_ip(result.current_ip) if result.current_ip else "no disponible"
+                        console.print(f"IP anterior: {previous} · IP actual: {current}")
+                    last_status = 0 if result.ok else 1
+                else:
+                    console.print("No se cambió la identidad.")
+                    last_status = 0
+            elif choice == "12":
+                if Confirm.ask(
+                    "Esto desactivará el modo global y el tráfico saldrá directo. ¿Continuar?",
+                    default=False,
+                ):
+                    result = global_runtime.stop()
+                    console.print(f"Estado: {result.detail}")
+                    last_status = 0 if result.ok else 1
+                else:
+                    console.print("El modo global sigue activo.")
+                    last_status = 0
+            elif choice == "13":
+                status = global_runtime.status()
+                console.print(f"Modo global: {status.state} — {status.detail}")
+                last_status = 0 if status.active else 1
 
             Prompt.ask("Presiona Enter para volver al menú", default="")
         except KeyboardInterrupt:
@@ -349,6 +456,41 @@ def main(argv: list[str] | None = None) -> int:
                 print(_verification_json(result))
             else:
                 console.print(f"{result.detail}; exit={result.ip or 'not shown'}")
+            return 0 if result.ok else 1
+        if args.tor_command in {"new-identity", "rotate"}:
+            result = rotate_identity(settings, restart=args.restart)
+            previous = (
+                result.previous_ip
+                if args.reveal_ip
+                else (mask_ip(result.previous_ip) if result.previous_ip else None)
+            )
+            current = (
+                result.current_ip
+                if args.reveal_ip
+                else (mask_ip(result.current_ip) if result.current_ip else None)
+            )
+            if args.json:
+                print(
+                    json.dumps(
+                        {
+                            "ok": result.ok,
+                            "changed": result.changed,
+                            "previous_ip": previous,
+                            "current_ip": current,
+                            "detail": result.detail,
+                            "error": result.error_code,
+                        },
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    )
+                )
+            else:
+                console.print(result.detail)
+                if result.ok:
+                    console.print(
+                        f"IP anterior: {previous or 'no disponible'} · "
+                        f"IP actual: {current or 'no disponible'}"
+                    )
             return 0 if result.ok else 1
 
     if args.command == "run":
@@ -428,6 +570,13 @@ def main(argv: list[str] | None = None) -> int:
                 command = command[1:]
             if not command:
                 parser.error("chxsec session start requires a command after --")
+            if args.yes:
+                service = ensure_service(settings)
+                if not service.ok:
+                    console.print(
+                        f"[red]{service.stderr or service.stdout or 'Tor is not available'}[/]"
+                    )
+                    return 1
             try:
                 result = SessionRuntime().start(
                     args.session_id,
@@ -571,6 +720,91 @@ def main(argv: list[str] | None = None) -> int:
                 console.print(f"status={plan.reason}")
                 console.print(plan.ruleset, end="")
             return 0
+
+    if args.command == "global":
+        runtime = GlobalRuntime()
+        if args.global_command == "plan":
+            try:
+                plan = runtime.plan(
+                    trans_port=args.trans_port,
+                    dns_port=args.dns_port,
+                    allow_lan=args.allow_lan,
+                )
+            except ValueError as exc:
+                console.print(f"[red]{exc}[/]")
+                return 2
+            if args.json:
+                print(json.dumps(plan.as_dict(), ensure_ascii=False, sort_keys=True))
+            else:
+                console.print(
+                    f"trans_port={plan.trans_port} dns_port={plan.dns_port} "
+                    f"tor_uid={plan.tor_uid} allow_lan={plan.allow_lan}"
+                )
+                console.print(f"dropin={plan.dropin_path}")
+                console.print("This plan changes nothing; review it before running start.")
+                console.print(plan.ruleset, end="", markup=False)
+                console.print(plan.torrc, end="", markup=False)
+            return 0
+
+        if args.global_command == "start":
+            if args.yes:
+                service = ensure_service(settings)
+                if not service.ok:
+                    console.print(
+                        f"[red]{service.stderr or service.stdout or 'Tor is not available'}[/]"
+                    )
+                    return 1
+            result = runtime.start(
+                trans_port=args.trans_port,
+                dns_port=args.dns_port,
+                allow_lan=args.allow_lan,
+                dry_run=not args.yes,
+            )
+            if args.json:
+                print(json.dumps(result.as_dict(), ensure_ascii=False, sort_keys=True))
+            else:
+                console.print(f"status={result.detail}")
+                for command in result.commands:
+                    console.print(f"- {' '.join(command)}", markup=False)
+                if result.plan is not None and not result.applied:
+                    console.print(result.plan.ruleset, end="", markup=False)
+                    console.print(result.plan.torrc, end="", markup=False)
+                if not args.yes:
+                    console.print("Re-run with --yes to apply these changes.")
+                elif result.ok:
+                    console.print(
+                        "[yellow]Todo el tráfico del host sale ahora por Tor; "
+                        "UDP, ICMP e IPv6 quedan bloqueados.[/]"
+                    )
+            return 0 if result.ok else 1
+
+        if args.global_command == "stop":
+            result = runtime.stop()
+            if args.json:
+                print(json.dumps(result.as_dict(), ensure_ascii=False, sort_keys=True))
+            else:
+                console.print(f"status={result.detail}")
+                for command in result.commands:
+                    console.print(f"- {' '.join(command)}", markup=False)
+            return 0 if result.ok else 1
+
+        if args.global_command == "status":
+            status = runtime.status()
+            if args.json:
+                print(json.dumps(status.as_dict(), ensure_ascii=False, sort_keys=True))
+            else:
+                console.print(f"state={status.state}")
+                console.print(f"detail={status.detail}")
+                console.print(f"dropin={'yes' if status.dropin else 'no'}")
+                console.print(f"tables=nat:{status.nat_table} filter:{status.filter_table}")
+                if status.trans_port is not None:
+                    console.print(
+                        f"ports=127.0.0.1:{status.trans_port}/tcp,"
+                        f"127.0.0.1:{status.dns_port}/udp"
+                    )
+                if status.allow_lan is not None:
+                    console.print(f"allow_lan={status.allow_lan}")
+            return 0 if status.active else 1
 
     if args.command == "mac":
         if args.mac_command == "list":

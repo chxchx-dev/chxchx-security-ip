@@ -10,6 +10,12 @@ from typing import Callable, Sequence
 from chxchx_security.services.network_plan import build_network_plan
 from chxchx_security.services.session import validate_session_id
 from chxchx_security.services.tor_ports import build_tor_port_plan
+from chxchx_security.services.tor_selinux import (
+    SELINUX_PORT_TYPE,
+    managed_ports as _managed_selinux_ports,
+    port_type as _selinux_port_type,
+    with_managed_ports as _with_managed_selinux_ports,
+)
 from chxchx_security.utils.process import CmdResult, run
 
 CommandRunner = Callable[[Sequence[str]], CmdResult]
@@ -17,7 +23,6 @@ CommandRunner = Callable[[Sequence[str]], CmdResult]
 DROPIN_DIR = "/etc/tor/torrc.d"
 TORRC = "/etc/tor/torrc"
 DEFAULTS_TORRC = "/usr/share/tor/defaults-torrc"
-SELINUX_PORT_TYPE = "tor_port_t"
 _PLACEHOLDER = "<dropin-file>"
 _WILDCARDS = {"0.0.0.0", "*", "[::]", "::"}
 _TRANS_PORT_RE = re.compile(r"^TransPort\s+\S+:(\d+)", re.MULTILINE)
@@ -66,56 +71,6 @@ def _local(row: str) -> tuple[str, int] | None:
         return None
     host, _, port = columns[3].rpartition(":")
     return (host, int(port)) if port.isdigit() else None
-
-
-def _selinux_port_type(semanage_port_list: str, proto: str, port: int) -> str | None:
-    """Find the most specific SELinux type assigned to a port."""
-    matches: list[tuple[int, str]] = []
-    for line in semanage_port_list.splitlines():
-        columns = line.split()
-        if len(columns) < 3 or columns[1] != proto:
-            continue
-        port_type = columns[0]
-        for port_range in " ".join(columns[2:]).split(","):
-            port_range = port_range.strip()
-            if "-" in port_range:
-                low, _, high = port_range.partition("-")
-                if low.isdigit() and high.isdigit() and int(low) <= port <= int(high):
-                    matches.append((int(high) - int(low), port_type))
-            elif port_range == str(port):
-                matches.append((0, port_type))
-    if not matches:
-        return None
-    specificity = min(width for width, _ in matches)
-    types = {port_type for width, port_type in matches if width == specificity}
-    return next(iter(types)) if len(types) == 1 else "<conflicting SELinux mappings>"
-
-
-def _managed_selinux_ports(dropin_content: str) -> list[tuple[int, str]]:
-    marker = "# chxsec-selinux-port:"
-    ports = []
-    for line in dropin_content.splitlines():
-        if not line.startswith(marker):
-            continue
-        fields = line.removeprefix(marker).split()
-        if len(fields) != 2 or fields[0] not in {"tcp", "udp"} or not fields[1].isdigit():
-            continue
-        port = int(fields[1])
-        if 1 <= port <= 65535:
-            ports.append((port, fields[0]))
-    return ports
-
-
-def _with_managed_selinux_ports(
-    config: str, ports: list[tuple[int, str]]
-) -> str:
-    if not ports:
-        return config
-    header, body = config.split("\n", 1)
-    markers = "".join(
-        f"# chxsec-selinux-port: {proto} {port}\n" for port, proto in ports
-    )
-    return f"{header}\n{markers}{body}"
 
 
 class TorPortRuntime:

@@ -35,10 +35,12 @@ def test_doctor_reports_required_dependencies(monkeypatch):
         "torsocks",
         "curl",
         "NetworkManager CLI",
+        "nftables CLI",
         "Tor service",
         "Tor SOCKS",
         "System clock",
         "Session Tor drop-ins",
+        "Global Tor mode",
     }
 
 

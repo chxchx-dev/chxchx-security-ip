@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import glob
+import os
 import platform
 from dataclasses import dataclass
 
@@ -57,7 +58,11 @@ def _clock_check() -> Check:
 
 
 def _session_dropin_check() -> Check:
-    stale = sorted(glob.glob("/etc/tor/torrc.d/chxsec-*.conf"))
+    stale = sorted(
+        path
+        for path in glob.glob("/etc/tor/torrc.d/chxsec-*.conf")
+        if not path.endswith("chxsec-global.conf")
+    )
     if not stale:
         return Check("Session Tor drop-ins", True, "none")
     return Check(
@@ -65,6 +70,21 @@ def _session_dropin_check() -> Check:
         False,
         f"{len(stale)} present; if no session is active, run `chxsec session destroy <id>` "
         "(a stale drop-in can stop Tor from starting after a reboot)",
+    )
+
+
+def _global_mode_check() -> Check:
+    dropin = "/etc/tor/torrc.d/chxsec-global.conf"
+    state = "/run/chxsec/global.json"
+    if not os.path.exists(dropin):
+        return Check("Global Tor mode", True, "inactive (optional)")
+    if os.path.exists(state):
+        return Check("Global Tor mode", True, "active")
+    return Check(
+        "Global Tor mode",
+        False,
+        "global drop-in is present without state; run `chxsec global stop` "
+        "to remove it or `chxsec global start` to reapply the kill switch",
     )
 
 
@@ -76,10 +96,12 @@ def doctor(settings: Settings) -> list[Check]:
         Check("torsocks", exists("torsocks"), "installed" if exists("torsocks") else "missing"),
         Check("curl", exists("curl"), "installed" if exists("curl") else "missing"),
         Check("NetworkManager CLI", exists("nmcli"), "installed" if exists("nmcli") else "missing"),
+        Check("nftables CLI", exists("nft"), "installed" if exists("nft") else "missing"),
         Check("Tor service", tor_state == "active", tor_state),
         Check("Tor SOCKS", socks_reachable(settings), f"{settings.tor_socks_host}:{settings.tor_socks_port}"),
         _clock_check(),
         _session_dropin_check(),
+        _global_mode_check(),
     ]
     if exists("firewall-cmd"):
         state = run(["firewall-cmd", "--state"], timeout=5)

@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from chxchx_security.config import Settings
+from chxchx_security.services.tor_control import TorControlError, request_newnym
 from chxchx_security.utils.process import CmdResult, exists, run
 from chxchx_security.utils.redact import mask_ip
 
@@ -23,8 +24,22 @@ class TorVerification:
     error_code: str | None = None
 
 
+@dataclass(frozen=True)
+class RotationResult:
+    ok: bool
+    changed: bool
+    previous_ip: str | None
+    current_ip: str | None
+    detail: str
+    error_code: str | None = None
+
+
 VERIFY_ATTEMPTS = 3
 VERIFY_RETRY_DELAY_SECONDS = 0.5
+AUTO_START_ATTEMPTS = 40
+AUTO_START_DELAY_SECONDS = 0.5
+ROTATION_ATTEMPTS = 3
+ROTATION_DELAY_SECONDS = 1.0
 
 
 def socks_reachable(settings: Settings) -> bool:
@@ -53,6 +68,33 @@ def stop_service() -> CmdResult:
     if not exists("systemctl"):
         return CmdResult(False, 127, "", "systemctl not found")
     return run(["sudo", "systemctl", "stop", "tor.service"], timeout=30)
+
+
+def _wait_for_socks(settings: Settings) -> bool:
+    for _ in range(AUTO_START_ATTEMPTS):
+        if socks_reachable(settings):
+            return True
+        time.sleep(AUTO_START_DELAY_SECONDS)
+    return False
+
+
+def ensure_service(settings: Settings) -> CmdResult:
+    """Start Tor when a protected action needs it, unless the user opted out."""
+    if service_state() == "active" and socks_reachable(settings):
+        return CmdResult(True, 0, "Tor is already active", "")
+    if not settings.auto_start_tor:
+        return CmdResult(
+            False,
+            1,
+            "",
+            "Tor is not active and CHXSEC_AUTO_START_TOR is disabled",
+        )
+    started = start_service()
+    if not started.ok:
+        return started
+    if _wait_for_socks(settings):
+        return CmdResult(True, 0, "Tor started", "")
+    return CmdResult(False, 1, "", "Tor started but its SOCKS port did not become reachable")
 
 
 def verify(settings: Settings, *, reveal_ip: bool = False) -> TorVerification:
@@ -129,6 +171,91 @@ def require_verified_route(settings: Settings) -> None:
         raise RuntimeError(f"Tor route is not verified{code}: {result.detail}")
 
 
+def rotate_identity(
+    settings: Settings,
+    *,
+    restart: bool = False,
+) -> RotationResult:
+    """Request a new Tor circuit and confirm whether the exit IP changed.
+
+    Raw IPs stay in this result for internal comparison; callers must mask them
+    before showing them to the user.
+    """
+    before = verify(settings, reveal_ip=True)
+    if not before.ok:
+        return RotationResult(
+            False,
+            False,
+            None,
+            None,
+            f"Tor route is not verified: {before.detail}",
+            before.error_code,
+        )
+
+    if restart:
+        result = run(["sudo", "systemctl", "restart", "tor.service"], timeout=60)
+        if not result.ok:
+            return RotationResult(
+                False,
+                False,
+                before.ip,
+                None,
+                result.stderr or result.stdout or "could not restart Tor",
+                "restart_failed",
+            )
+        if not _wait_for_socks(settings):
+            return RotationResult(
+                False,
+                False,
+                before.ip,
+                None,
+                "Tor restarted but its SOCKS port did not become reachable",
+                "socks_unreachable",
+            )
+    else:
+        try:
+            request_newnym(settings)
+        except TorControlError as exc:
+            return RotationResult(
+                False,
+                False,
+                before.ip,
+                None,
+                f"{exc}. Re-run with --restart as a fallback.",
+                "control_unavailable",
+            )
+
+    current = None
+    for attempt in range(ROTATION_ATTEMPTS):
+        time.sleep(ROTATION_DELAY_SECONDS)
+        current = verify(settings, reveal_ip=True)
+        if not current.ok:
+            continue
+        if current.ip and current.ip != before.ip:
+            return RotationResult(
+                True,
+                True,
+                before.ip,
+                current.ip,
+                "Tor circuit rotated; the exit IP changed",
+            )
+        if not restart and attempt < ROTATION_ATTEMPTS - 1:
+            try:
+                request_newnym(settings)
+            except TorControlError:
+                pass
+
+    return RotationResult(
+        True,
+        False,
+        before.ip,
+        current.ip if current and current.ok else None,
+        "Tor accepted the new identity request, but the exit IP did not change; "
+        "retry later (new circuits can reuse the same exit)",
+        "same_exit",
+    )
+
+
 def protected_argv(settings: Settings, command: list[str]) -> list[str]:
     if not command:
         raise ValueError("No command supplied")
@@ -146,6 +273,9 @@ def protected_argv(settings: Settings, command: list[str]) -> list[str]:
 def run_protected(settings: Settings, command: list[str]) -> int:
     if not exists("torsocks"):
         raise RuntimeError("torsocks is not installed")
+    service = ensure_service(settings)
+    if not service.ok:
+        raise RuntimeError(service.stderr or service.stdout or "Tor is not available")
     require_verified_route(settings)
     argv = protected_argv(settings, command)
     return subprocess.call(argv)
@@ -154,6 +284,9 @@ def run_protected(settings: Settings, command: list[str]) -> int:
 def protected_shell(settings: Settings) -> int:
     if not exists("torsocks"):
         raise RuntimeError("torsocks is not installed")
+    service = ensure_service(settings)
+    if not service.ok:
+        raise RuntimeError(service.stderr or service.stdout or "Tor is not available")
     require_verified_route(settings)
 
     runtime_parent = Path(os.getenv("XDG_RUNTIME_DIR", "/dev/shm"))
